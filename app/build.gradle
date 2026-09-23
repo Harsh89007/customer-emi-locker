@@ -17,7 +17,7 @@ android {
 
     signingConfigs {
         release {
-            storeFile file("keystore.jks") // GitHub action इसे बनाएगा
+            storeFile file("keystore.jks")
             storePassword System.getenv("STORE_PASSWORD")
             keyAlias System.getenv("KEY_ALIAS")
             keyPassword System.getenv("KEY_PASSWORD")
@@ -31,11 +31,16 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
+    
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
 }
 
 dependencies {
-    implementation platform('com.google.firebase:firebase-bom:32.3.1')
-    implementation 'com.google.firebase:firebase-firestore'
-    implementation 'com.google.firebase:firebase-messaging'
-    implementation 'com.journeyapps:zxing-android-embedded:4.3.0' // QR Code Scanner के लिए
+    // हमने BOM (platform) हटा दिया है और सीधे वर्ज़न डाल दिए हैं ताकि Gradle को कोई कन्फ्यूजन न हो
+    implementation 'com.google.firebase:firebase-firestore:24.10.0'
+    implementation 'com.google.firebase:firebase-messaging:23.4.0'
+    implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
 }
