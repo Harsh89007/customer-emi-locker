@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "214819029870",
+    "project_id": "emilockerpro-62fae",
+    "storage_bucket": "emilockerpro-62fae.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:214819029870:android:bee6e8d43d6b56f6e1377f",
+        "android_client_info": {
+          "package_name": "com.harshit.emilocker.customer"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAhMjWhx34AtL6Frz6jPLWzSzBXV9BwlBc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
