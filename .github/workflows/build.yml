@@ -22,6 +22,7 @@ jobs:
 
       - name: Decode Keystore
         run: |
+          mkdir -p app
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > app/keystore.jks
 
       - name: Build Release APK
@@ -29,7 +30,7 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
-        run: ./gradlew assembleRelease
+        run: gradle assembleRelease
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
