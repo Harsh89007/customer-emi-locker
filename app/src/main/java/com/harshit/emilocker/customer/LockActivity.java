@@ -3,17 +3,24 @@ package com.harshit.emilocker.customer;
 import android.app.Activity;
 import android.app.admin.DevicePolicyManager;
 import android.content.Context;
-import android.content.Intent; // <-- यह लाइन मिसिंग थी
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.view.View;
 import android.view.WindowManager;
+import android.widget.ImageView;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.ListenerRegistration;
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.MultiFormatWriter;
+import com.google.zxing.common.BitMatrix;
+import com.journeyapps.barcodescanner.BarcodeEncoder;
 
 public class LockActivity extends Activity {
     private DevicePolicyManager dpm;
     private ListenerRegistration listener;
+    private ImageView qrCodeImage;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -32,6 +39,19 @@ public class LockActivity extends Activity {
                              WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
 
         setContentView(R.layout.activity_lock);
+        
+        qrCodeImage = findViewById(R.id.qr_code_image);
+
+        // Firebase से Admin वाली UPI ID उठाकर QR जनरेट करना
+        FirebaseFirestore.getInstance().collection("AdminSettings").document("PaymentInfo")
+            .get().addOnSuccessListener(documentSnapshot -> {
+                if (documentSnapshot.exists()) {
+                    String adminUpi = documentSnapshot.getString("upi_id");
+                    if (adminUpi != null && !adminUpi.isEmpty()) {
+                        generateQRCode(adminUpi);
+                    }
+                }
+            });
 
         dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
         try {
@@ -53,6 +73,20 @@ public class LockActivity extends Activity {
                         }
                     }
                 });
+        }
+    }
+
+    // यह फंक्शन UPI ID को स्कैन होने वाले QR कोड में बदलता है
+    private void generateQRCode(String upiId) {
+        try {
+            String upiUrl = "upi://pay?pa=" + upiId + "&pn=EMI_Payment&cu=INR";
+            MultiFormatWriter writer = new MultiFormatWriter();
+            BitMatrix matrix = writer.encode(upiUrl, BarcodeFormat.QR_CODE, 400, 400);
+            BarcodeEncoder encoder = new BarcodeEncoder();
+            Bitmap bitmap = encoder.createBitmap(matrix);
+            qrCodeImage.setImageBitmap(bitmap);
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
