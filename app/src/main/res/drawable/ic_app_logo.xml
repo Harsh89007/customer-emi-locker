@@ -1,0 +1,53 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="512dp"
+    android:height="512dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+
+    <!-- Background -->
+    <path
+        android:fillColor="#0F172A"
+        android:pathData="M 110,0 L 402,0 A 110,110 0 0 1 512,110 L 512,402 A 110,110 0 0 1 402,512 L 110,512 A 110,110 0 0 1 0,402 L 0,110 A 110,110 0 0 1 110,0 Z" />
+
+    <!-- Shield Outer Glow -->
+    <path
+        android:fillColor="#4D0284C7"
+        android:pathData="M256 60 L396 110 V230 C396 330 316 415 256 440 C196 415 116 330 116 230 V110 Z" />
+
+    <!-- Main Shield -->
+    <path
+        android:fillColor="#0284C7"
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="12"
+        android:strokeLineJoin="round"
+        android:pathData="M256 80 L376 120 V230 C376 315 305 390 256 415 C207 390 136 315 136 230 V120 Z" />
+
+    <!-- Inner Shield Contrast -->
+    <path
+        android:fillColor="#0F172A"
+        android:pathData="M256 110 L346 142 V225 C346 295 285 355 256 378 C227 355 166 295 166 225 V142 Z" />
+
+    <!-- Secure Padlock Shackle -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="20"
+        android:strokeLineCap="round"
+        android:pathData="M206 205 V160 C206 132 228 110 256 110 C284 110 306 132 306 160 V205" />
+
+    <!-- Padlock Body -->
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M 211,200 L 301,200 A 20,20 0 0 1 321,220 L 321,290 A 20,20 0 0 1 301,310 L 211,310 A 20,20 0 0 1 191,290 L 191,220 A 20,20 0 0 1 211,200 Z" />
+
+    <!-- Keyhole inside Lock -->
+    <path
+        android:fillColor="#0F172A"
+        android:pathData="M 256 226 A 14 14 0 1 0 256 254 A 14 14 0 1 0 256 226 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#0F172A"
+        android:strokeWidth="10"
+        android:strokeLineCap="round"
+        android:pathData="M256 250 V275" />
+</vector>
