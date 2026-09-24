@@ -5,19 +5,17 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 import android.content.SharedPreferences;
+import android.util.Log;
 
 public class BootReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction()) || 
-            "android.intent.action.QUICKBOOT_POWERON".equals(intent.getAction())) {
-            
-            // चेक करो कि क्या डिवाइस रजिस्टर हो चुका है?
+        if (intent.getAction() != null) {
             SharedPreferences prefs = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE);
             String sessionId = prefs.getString("session_id", null);
             
+            // अगर कस्टमर रजिस्टर है, तो तुरंत VIP सर्विस चालू करो
             if (sessionId != null) {
-                // फोन ऑन होते ही बिना ऐप खोले VIP सर्विस चालू कर दो
                 Intent serviceIntent = new Intent(context, LockListenerService.class);
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     context.startForegroundService(serviceIntent);
@@ -28,4 +26,3 @@ public class BootReceiver extends BroadcastReceiver {
         }
     }
 }
-
