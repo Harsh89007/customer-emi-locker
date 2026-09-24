@@ -3,60 +3,78 @@ package com.harshit.emilocker.customer;
 import android.app.Activity;
 import android.app.admin.DevicePolicyManager;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.os.Bundle;
-import android.widget.Button;
-import android.widget.Toast;
+import android.view.View;
+import android.view.WindowManager;
 import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.firestore.ListenerRegistration;
 
 public class LockActivity extends Activity {
-    private FirebaseFirestore db;
-    private String myDocumentId = "SESSION_12345";
     private DevicePolicyManager dpm;
+    private ListenerRegistration listener;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_lock);
         
-        db = FirebaseFirestore.getInstance();
-        dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
+        // 1. फोन को फुल स्क्रीन करना और नेविगेशन/स्टेटस बार ब्लॉक करना
+        getWindow().getDecorView().setSystemUiVisibility(
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
+            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
+            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
+            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
+            View.SYSTEM_UI_FLAG_FULLSCREEN);
+        
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON |
+                             WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
+                             WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
 
-        // सिर्फ डिवाइस ओनर होने पर ही Kiosk Mode चालू करें, वरना क्रैश हो जाएगा
+        setContentView(R.layout.activity_lock);
+
+        dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
         try {
             if (dpm.isDeviceOwnerApp(getPackageName())) {
-                startLockTask(); 
+                startLockTask(); // 100% Kiosk Mode
             }
-        } catch (Exception e) {
-            // रनिंग डिवाइस में क्रैश से बचने के लिए इसे इग्नोर किया गया है
-        }
+        } catch (Exception e) {}
 
-        Button checkStatusBtn = findViewById(R.id.btn_check_status);
-        checkStatusBtn.setOnClickListener(v -> {
-            Toast.makeText(this, "पेमेंट स्टेटस चेक कर रहे हैं...", Toast.LENGTH_SHORT).show();
-            
-            db.collection("Customers").document(myDocumentId).get()
-                .addOnSuccessListener(document -> {
-                    if (document.exists()) {
-                        Boolean isLocked = document.getBoolean("is_locked");
+        SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
+        String sessionId = prefs.getString("session_id", null);
+
+        // 2. ऑटोमैटिक अनलॉक लॉजिक (कोई बटन नहीं)
+        if (sessionId != null) {
+            listener = FirebaseFirestore.getInstance().collection("Customers").document(sessionId)
+                .addSnapshotListener((snapshot, error) -> {
+                    if (snapshot != null) {
+                        // अगर डीलर ने रिलीज़/डिलीट कर दिया
+                        if (!snapshot.exists()) {
+                            unlockAndClose();
+                            return;
+                        }
+                        // अगर डीलर ने अनलॉक कर दिया
+                        Boolean isLocked = snapshot.getBoolean("is_locked");
                         if (isLocked != null && !isLocked) {
-                            try {
-                                if (dpm.isDeviceOwnerApp(getPackageName())) {
-                                    stopLockTask();
-                                }
-                            } catch (Exception e) {}
-                            finish();
-                        } else {
-                            Toast.makeText(this, "अभी तक पेमेंट अपडेट नहीं हुआ है!", Toast.LENGTH_LONG).show();
+                            unlockAndClose();
                         }
                     }
-                }).addOnFailureListener(e -> {
-                    Toast.makeText(this, "एरर: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                 });
-        });
+        }
+    }
+
+    private void unlockAndClose() {
+        try {
+            if (dpm.isDeviceOwnerApp(getPackageName())) {
+                stopLockTask();
+            }
+        } catch (Exception e) {}
+        if (listener != null) listener.remove();
+        finish(); // लाल स्क्रीन अपने आप हट जाएगी
     }
 
     @Override
     public void onBackPressed() {
-        Toast.makeText(this, "कृपया पहले EMI जमा करें", Toast.LENGTH_SHORT).show();
+        // बैक बटन काम नहीं करेगा
     }
 }
+
