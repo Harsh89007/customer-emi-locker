@@ -44,8 +44,8 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
 
-            // यह चेक करता है कि फोन सेटअप विज़ार्ड में है (नया) या चालू फोन है
-            int setupComplete = Settings.Secure.getInt(getContentResolver(), Settings.Secure.USER_SETUP_COMPLETE, 0);
+            // एरर फिक्स: Settings.Secure.USER_SETUP_COMPLETE की जगह सीधे "user_setup_complete" का इस्तेमाल किया गया है
+            int setupComplete = Settings.Secure.getInt(getContentResolver(), "user_setup_complete", 0);
             
             if (setupComplete == 0) {
                 // नया फोन है, ऐप गलती से खुल गया
@@ -54,13 +54,13 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
 
-            // --- रनिंग डिवाइस का सेफ परमिशन लॉजिक (बिना क्रैश के) ---
+            // --- रनिंग डिवाइस का सेफ परमिशन लॉजिक ---
             if (!dpm.isAdminActive(adminComponent)) {
                 Intent intent = new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
                 intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent);
                 intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "कृपया EMI सिक्योरिटी एक्टिवेट करें।");
                 startActivity(intent);
-                finish(); // क्रैश से बचने के लिए ऐप बंद कर दो, यूजर खुद दोबारा खोलेगा
+                finish(); 
                 Toast.makeText(this, "एक्टिवेट करने के बाद ऐप दोबारा खोलें", Toast.LENGTH_LONG).show();
                 return;
             }
@@ -68,7 +68,7 @@ public class MainActivity extends AppCompatActivity {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
                 Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName()));
                 startActivity(intent);
-                finish(); // क्रैश से बचने के लिए ऐप बंद कर दो
+                finish(); 
                 Toast.makeText(this, "Allow display over other apps चालू करके ऐप दोबारा खोलें", Toast.LENGTH_LONG).show();
                 return;
             }
@@ -116,3 +116,4 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 }
+
