@@ -19,7 +19,6 @@ public class MyAdminReceiver extends DeviceAdminReceiver {
         super.onDisabled(context, intent);
     }
 
-    // यह वह कोड है जो Test DPC से ओनरशिप मिलते ही उसे क्रैश होने से बचाएगा
     @Override
     public void onTransferOwnershipComplete(Context context, PersistableBundle bundle) {
         super.onTransferOwnershipComplete(context, bundle);
