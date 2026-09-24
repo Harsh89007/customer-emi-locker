@@ -19,12 +19,12 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         db = FirebaseFirestore.getInstance();
 
-        // बैकग्राउंड सर्विस स्टार्ट करें जो हमेशा लॉक/अनलॉक चेक करेगी
+        // बैकग्राउंड जासूस सर्विस स्टार्ट करें
         startService(new Intent(this, LockListenerService.class));
 
         // QR स्कैनर खोलें
         ScanOptions options = new ScanOptions();
-        options.setPrompt("Scan Dealer QR");
+        options.setPrompt("Dealer QR Scan Karein");
         options.setBeepEnabled(true);
         barcodeLauncher.launch(options);
     }
@@ -37,13 +37,19 @@ public class MainActivity extends AppCompatActivity {
                 
                 Map<String, Object> data = new HashMap<>();
                 data.put("model", deviceModel);
-                data.put("is_locked", false); // शुरू में फोन अनलॉक रहेगा
+                data.put("is_locked", false);
 
                 db.collection("Customers").document(sessionId).set(data)
                     .addOnSuccessListener(aVoid -> {
-                        Toast.makeText(this, "Device Registered!", Toast.LENGTH_LONG).show();
-                        finish(); // ऐप बंद कर दें, सर्विस बैकग्राउंड में काम करेगी
+                        Toast.makeText(this, "Device Registered Successfully!", Toast.LENGTH_LONG).show();
+                        finish();
+                    }).addOnFailureListener(e -> {
+                        Toast.makeText(this, "Registration Failed!", Toast.LENGTH_SHORT).show();
+                        finish();
                     });
+            } else {
+                Toast.makeText(this, "Scan Cancelled", Toast.LENGTH_SHORT).show();
+                finish();
             }
         });
 }
