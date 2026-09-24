@@ -29,6 +29,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView errorText;
     private Button btn;
     private SharedPreferences prefs;
+    private boolean autoStartRequested = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -61,7 +62,7 @@ public class MainActivity extends AppCompatActivity {
         if (savedSession != null) {
             btn.setText("DEVICE IS SECURED");
             btn.setEnabled(false);
-            startSecurityService(); // नया VIP सर्विस लॉन्चर
+            startSecurityService(); 
             return; 
         }
 
@@ -81,7 +82,6 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    // यह फंक्शन सर्विस को VIP (Foreground) मोड में चालू करता है
     private void startSecurityService() {
         Intent serviceIntent = new Intent(this, LockListenerService.class);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -94,6 +94,7 @@ public class MainActivity extends AppCompatActivity {
     private void checkAndProceed() throws Exception {
         boolean isDeviceOwner = dpm.isDeviceOwnerApp(getPackageName());
 
+        // अगर Test DPC (New Device) है, तो सीधा स्कैनर खोलो (कोई Auto-Start परमिशन नहीं चाहिए)
         if (isDeviceOwner) {
             startQRScanner();
             return;
@@ -105,6 +106,7 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
+        // 1. Admin Permission
         if (!dpm.isAdminActive(adminComponent)) {
             Intent intent = new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
             intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent);
@@ -113,13 +115,44 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
+        // 2. Overlay Permission
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
             Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName()));
             startActivity(intent);
             return;
         }
 
+        // 3. प्रोफेशनल Auto-Start पॉप-अप (सिर्फ रनिंग डिवाइस के लिए)
+        if (!autoStartRequested) {
+            requestAutoStartPermission();
+            autoStartRequested = true;
+            errorText.setText("Auto-Start ऑन करने के बाद दोबारा START बटन दबाएं");
+            return;
+        }
+
         startQRScanner();
+    }
+
+    // यह फंक्शन फोन की कंपनी पहचानकर अपने-आप Auto-Start वाला पेज खोल देगा
+    private void requestAutoStartPermission() {
+        String manufacturer = android.os.Build.MANUFACTURER.toLowerCase();
+        try {
+            Intent intent = new Intent();
+            if ("xiaomi".equals(manufacturer)) {
+                intent.setComponent(new ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"));
+            } else if ("oppo".equals(manufacturer) || "realme".equals(manufacturer)) {
+                intent.setComponent(new ComponentName("com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity"));
+            } else if ("vivo".equals(manufacturer)) {
+                intent.setComponent(new ComponentName("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"));
+            } else {
+                // अगर कोई और फोन है, तो नॉर्मल बैटरी सेटिंग खोलेगा
+                intent.setAction(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+            }
+            startActivity(intent);
+            Toast.makeText(this, "यहाँ System Settings को चालू (ON) कर दें!", Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "कृपया सेटिंग में जाकर Auto-Start चालू करें", Toast.LENGTH_LONG).show();
+        }
     }
 
     private void startQRScanner() {
@@ -145,7 +178,7 @@ public class MainActivity extends AppCompatActivity {
                         .addOnSuccessListener(aVoid -> {
                             prefs.edit().putString("session_id", sessionId).apply();
                             
-                            startSecurityService(); // स्कैन के बाद VIP सर्विस चालू
+                            startSecurityService(); 
                             
                             Toast.makeText(this, "Device Registered!", Toast.LENGTH_LONG).show();
                             btn.setText("DEVICE IS SECURED");
