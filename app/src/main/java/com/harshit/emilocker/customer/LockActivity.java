@@ -3,6 +3,7 @@ package com.harshit.emilocker.customer;
 import android.app.Activity;
 import android.app.admin.DevicePolicyManager;
 import android.content.Context;
+import android.content.Intent; // <-- यह लाइन मिसिंग थी
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.view.View;
@@ -81,4 +82,3 @@ public class LockActivity extends Activity {
         finish();
     }
 }
-
