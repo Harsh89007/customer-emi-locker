@@ -39,7 +39,9 @@ android {
 }
 
 dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.firebase:firebase-firestore:24.10.0'
     implementation 'com.google.firebase:firebase-messaging:23.4.0'
     implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
 }
+
