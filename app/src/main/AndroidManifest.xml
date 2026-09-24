@@ -11,6 +11,8 @@
     <!-- VIP नोटिफिकेशन सर्विस की परमिशन -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    
 
     <application
         android:allowBackup="false"
