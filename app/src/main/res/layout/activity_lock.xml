@@ -4,80 +4,48 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:gravity="center"
-    android:background="#B71C1C"
+    android:background="#EF4444"
     android:padding="20dp">
 
-    <!-- मैंने app:tint को android:tint से बदल दिया है -->
     <ImageView
         android:layout_width="80dp"
         android:layout_height="80dp"
         android:src="@android:drawable/ic_secure"
-        android:tint="#FFFFFF"
-        android:layout_marginBottom="16dp"/>
+        android:layout_marginBottom="16dp"
+        android:tint="#FFFFFF"/>
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="DEVICE LOCKED"
         android:textColor="#FFFFFF"
-        android:textSize="28sp"
+        android:textSize="32sp"
         android:textStyle="bold"
-        android:letterSpacing="0.1" />
+        android:layout_marginBottom="16dp"/>
 
     <TextView
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="आपकी EMI का भुगतान नहीं हुआ है। कृपया जल्द से जल्द अपनी बकाया EMI जमा करें, अन्यथा यह फोन काम नहीं करेगा।"
-        android:textColor="#FFCDD2"
+        android:textColor="#FFFFFF"
         android:textSize="16sp"
         android:textAlignment="center"
-        android:layout_marginTop="10dp"
         android:layout_marginBottom="30dp"/>
 
-    <!-- मैंने CardView को हटाकर नॉर्मल LinearLayout लगा दिया है, जो बिना डिपेंडेंसी के काम करेगा -->
-    <LinearLayout
+    <!-- QR Code Placeholder -->
+    <ImageView
         android:layout_width="250dp"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:gravity="center"
-        android:padding="16dp"
+        android:layout_height="250dp"
         android:background="#FFFFFF"
-        android:elevation="8dp"
-        android:layout_marginBottom="30dp">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="पेमेंट करने के लिए स्कैन करें"
-            android:textColor="#000000"
-            android:textStyle="bold"
-            android:layout_marginBottom="10dp"/>
-
-        <ImageView
-            android:id="@+id/img_payment_qr"
-            android:layout_width="150dp"
-            android:layout_height="150dp"
-            android:background="#EEEEEE"
-            android:src="@android:drawable/ic_menu_gallery" />
+        android:padding="10dp"
+        android:src="@android:drawable/ic_menu_gallery" />
         
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="UPI Apps (PhonePe, GPay, Paytm) से स्कैन करें"
-            android:textColor="#555555"
-            android:textSize="12sp"
-            android:textAlignment="center"
-            android:layout_marginTop="8dp"/>
-    </LinearLayout>
-
-    <Button
-        android:id="@+id/btn_check_status"
-        android:layout_width="match_parent"
-        android:layout_height="55dp"
-        android:text="मैंने पेमेंट कर दिया है (Check Status)"
-        android:backgroundTint="#FFFFFF"
-        android:textColor="#B71C1C"
-        android:textSize="16sp"
-        android:textStyle="bold"/>
-
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="स्कैन करके पेमेंट करें"
+        android:textColor="#FFFFFF"
+        android:textSize="14sp"
+        android:layout_marginTop="10dp"/>
 </LinearLayout>
+
