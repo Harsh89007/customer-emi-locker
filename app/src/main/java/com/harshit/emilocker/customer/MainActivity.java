@@ -1,5 +1,6 @@
 package com.harshit.emilocker.customer;
 
+import android.app.Activity;
 import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
@@ -9,14 +10,13 @@ import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.widget.Toast;
-import androidx.appcompat.app.AppCompatActivity;
 import com.google.firebase.firestore.FirebaseFirestore;
-import com.journeyapps.barcodescanner.ScanContract;
-import com.journeyapps.barcodescanner.ScanOptions;
+import com.google.zxing.integration.android.IntentIntegrator;
+import com.google.zxing.integration.android.IntentResult;
 import java.util.HashMap;
 import java.util.Map;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends Activity {
     private FirebaseFirestore db;
     private DevicePolicyManager dpm;
     private ComponentName adminComponent;
@@ -36,7 +36,6 @@ public class MainActivity extends AppCompatActivity {
     private void checkAndProceed() {
         try {
             boolean isDeviceOwner = dpm.isDeviceOwnerApp(getPackageName());
-
             if (isDeviceOwner) {
                 // नया फोन है और ओनरशिप मिल गई है
                 startService(new Intent(this, LockListenerService.class));
@@ -44,11 +43,8 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
 
-            // एरर फिक्स: Settings.Secure.USER_SETUP_COMPLETE की जगह सीधे "user_setup_complete" का इस्तेमाल किया गया है
             int setupComplete = Settings.Secure.getInt(getContentResolver(), "user_setup_complete", 0);
-            
             if (setupComplete == 0) {
-                // नया फोन है, ऐप गलती से खुल गया
                 Toast.makeText(this, "कृपया पहले Test DPC से ओनरशिप लें!", Toast.LENGTH_LONG).show();
                 finish();
                 return;
@@ -73,7 +69,7 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
 
-            // अगर दोनों परमिशन मिल गईं
+            // अगर दोनों परमिशन मिल गईं तो सीधे स्कैनर खोलो
             startService(new Intent(this, LockListenerService.class));
             startQRScanner();
 
@@ -83,37 +79,44 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    // हमने स्कैनर का नया तरीका इस्तेमाल किया है जो Activity में बिना क्रैश हुए चलता है
     private void startQRScanner() {
-        ScanOptions options = new ScanOptions();
-        options.setPrompt("Dealer QR Scan Karein");
-        options.setBeepEnabled(true);
-        barcodeLauncher.launch(options);
+        IntentIntegrator integrator = new IntentIntegrator(this);
+        integrator.setPrompt("Dealer QR Scan Karein");
+        integrator.setBeepEnabled(true);
+        integrator.setOrientationLocked(false);
+        integrator.initiateScan();
     }
 
-    private final androidx.activity.result.ActivityResultLauncher<ScanOptions> barcodeLauncher = 
-        registerForActivityResult(new ScanContract(), result -> {
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        IntentResult result = IntentIntegrator.parseActivityResult(requestCode, resultCode, data);
+        if(result != null) {
             if(result.getContents() != null) {
                 String sessionId = result.getContents();
                 String deviceModel = android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL;
                 boolean isFullySecure = dpm.isDeviceOwnerApp(getPackageName()); 
 
-                Map<String, Object> data = new HashMap<>();
-                data.put("model", deviceModel);
-                data.put("is_locked", false);
-                data.put("is_released", false);
-                data.put("security_level", isFullySecure ? "Device Owner (100%)" : "Admin + Overlay (Running)");
+                Map<String, Object> dbData = new HashMap<>();
+                dbData.put("model", deviceModel);
+                dbData.put("is_locked", false);
+                dbData.put("is_released", false);
+                dbData.put("security_level", isFullySecure ? "Device Owner (100%)" : "Admin + Overlay (Running)");
 
-                db.collection("Customers").document(sessionId).set(data)
+                db.collection("Customers").document(sessionId).set(dbData)
                     .addOnSuccessListener(aVoid -> {
                         Toast.makeText(this, "Device Registered!", Toast.LENGTH_LONG).show();
                         finish();
                     }).addOnFailureListener(e -> {
-                        Toast.makeText(this, "Failed!", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, "Registration Failed!", Toast.LENGTH_SHORT).show();
                         finish();
                     });
             } else {
-                finish();
+                finish(); // अगर बैक कर दिया
             }
-        });
+        } else {
+            super.onActivityResult(requestCode, resultCode, data);
+        }
+    }
 }
 
