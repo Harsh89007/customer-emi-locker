@@ -1,7 +1,5 @@
 package com.harshit.emilocker.customer;
 
-import android.accounts.Account;
-import android.accounts.AccountManager;
 import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
@@ -32,60 +30,56 @@ public class MainActivity extends AppCompatActivity {
         dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
         adminComponent = new ComponentName(this, MyAdminReceiver.class);
 
-        checkDeviceStatusAndProceed();
+        checkAndProceed();
     }
 
-    private void checkDeviceStatusAndProceed() {
-        boolean isDeviceOwner = dpm.isDeviceOwnerApp(getPackageName());
-
-        if (isDeviceOwner) {
-            // नया फोन है और Test DPC से ओनरशिप मिल चुकी है -> स्कैनर चालू करो
-            startService(new Intent(this, LockListenerService.class));
-            startQRScanner();
-        } else {
-            // ओनरशिप नहीं है, अब चेक करेंगे कि फोन रनिंग है या रिसेट
-            if (isRunningDevice()) {
-                // रनिंग फोन है -> परमिशन मांगो
-                requestRunningDevicePermissions();
-            } else {
-                // नया फोन है लेकिन ओनरशिप नहीं मिली -> ऐप बंद कर दो
-                Toast.makeText(this, "यह नया डिवाइस है! कृपया पहले Test DPC से ओनरशिप ट्रांसफर करें।", Toast.LENGTH_LONG).show();
-                finish(); 
-            }
-        }
-    }
-
-    private boolean isRunningDevice() {
+    private void checkAndProceed() {
         try {
-            AccountManager accountManager = AccountManager.get(this);
-            Account[] accounts = accountManager.getAccounts();
-            return accounts.length > 0;
-        } catch (SecurityException e) {
-            return false;
-        }
-    }
+            boolean isDeviceOwner = dpm.isDeviceOwnerApp(getPackageName());
 
-    private void requestRunningDevicePermissions() {
-        boolean allPermissionsGranted = true;
+            if (isDeviceOwner) {
+                // नया फोन है और ओनरशिप मिल गई है
+                startService(new Intent(this, LockListenerService.class));
+                startQRScanner();
+                return;
+            }
 
-        if (!dpm.isAdminActive(adminComponent)) {
-            allPermissionsGranted = false;
-            Intent intent = new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
-            intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent);
-            intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "कृपया EMI सिक्योरिटी एक्टिवेट करें।");
-            startActivity(intent);
-        }
+            // यह चेक करता है कि फोन सेटअप विज़ार्ड में है (नया) या चालू फोन है
+            int setupComplete = Settings.Secure.getInt(getContentResolver(), Settings.Secure.USER_SETUP_COMPLETE, 0);
+            
+            if (setupComplete == 0) {
+                // नया फोन है, ऐप गलती से खुल गया
+                Toast.makeText(this, "कृपया पहले Test DPC से ओनरशिप लें!", Toast.LENGTH_LONG).show();
+                finish();
+                return;
+            }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
-            allPermissionsGranted = false;
-            Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName()));
-            startActivity(intent);
-            Toast.makeText(this, "कृपया 'Allow display over other apps' चालू करें", Toast.LENGTH_LONG).show();
-        }
+            // --- रनिंग डिवाइस का सेफ परमिशन लॉजिक (बिना क्रैश के) ---
+            if (!dpm.isAdminActive(adminComponent)) {
+                Intent intent = new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
+                intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent);
+                intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "कृपया EMI सिक्योरिटी एक्टिवेट करें।");
+                startActivity(intent);
+                finish(); // क्रैश से बचने के लिए ऐप बंद कर दो, यूजर खुद दोबारा खोलेगा
+                Toast.makeText(this, "एक्टिवेट करने के बाद ऐप दोबारा खोलें", Toast.LENGTH_LONG).show();
+                return;
+            }
 
-        if (allPermissionsGranted) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName()));
+                startActivity(intent);
+                finish(); // क्रैश से बचने के लिए ऐप बंद कर दो
+                Toast.makeText(this, "Allow display over other apps चालू करके ऐप दोबारा खोलें", Toast.LENGTH_LONG).show();
+                return;
+            }
+
+            // अगर दोनों परमिशन मिल गईं
             startService(new Intent(this, LockListenerService.class));
             startQRScanner();
+
+        } catch (Exception e) {
+            Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            finish();
         }
     }
 
@@ -106,18 +100,18 @@ public class MainActivity extends AppCompatActivity {
                 Map<String, Object> data = new HashMap<>();
                 data.put("model", deviceModel);
                 data.put("is_locked", false);
+                data.put("is_released", false);
                 data.put("security_level", isFullySecure ? "Device Owner (100%)" : "Admin + Overlay (Running)");
 
                 db.collection("Customers").document(sessionId).set(data)
                     .addOnSuccessListener(aVoid -> {
-                        Toast.makeText(this, "Device Registered Successfully!", Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, "Device Registered!", Toast.LENGTH_LONG).show();
                         finish();
                     }).addOnFailureListener(e -> {
-                        Toast.makeText(this, "Registration Failed!", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, "Failed!", Toast.LENGTH_SHORT).show();
                         finish();
                     });
             } else {
-                Toast.makeText(this, "Scan Cancelled", Toast.LENGTH_SHORT).show();
                 finish();
             }
         });
