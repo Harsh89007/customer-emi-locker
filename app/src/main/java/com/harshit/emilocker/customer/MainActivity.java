@@ -15,6 +15,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
+
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.journeyapps.barcodescanner.ScanContract;
@@ -129,7 +130,6 @@ public class MainActivity extends AppCompatActivity {
         startQRScanner();
     }
 
-    // नया स्मार्ट फॉलबैक सिस्टम
     private void requestAutoStartPermission() {
         try {
             String manufacturer = android.os.Build.MANUFACTURER.toLowerCase();
@@ -146,7 +146,6 @@ public class MainActivity extends AppCompatActivity {
             startActivity(intent);
             Toast.makeText(this, "यहाँ Auto-Start चालू करें", Toast.LENGTH_LONG).show();
         } catch (Exception e) {
-            // अगर शॉर्टकट फेल हो जाए, तो सीधे App Info (ऐप की सेटिंग) खोल दो
             Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
             Uri uri = Uri.fromParts("package", getPackageName(), null);
             intent.setData(uri);
@@ -162,6 +161,30 @@ public class MainActivity extends AppCompatActivity {
         barcodeLauncher.launch(options);
     }
 
+    // --- नया: क्रैश-प्रूफ IMEI निकालने वाला स्मार्ट फंक्शन ---
+    private String getSafeImei() {
+        String imei = "N/A (Running Device)";
+        try {
+            if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
+                // Android 9 (API 28) और उसके बाद वाले ओनर फोन्स के लिए Google का असली तरीका
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    imei = dpm.getImei(adminComponent);
+                } else {
+                    // पुराने एंड्रॉइड वर्ज़न्स के लिए बैकअप तरीका
+                    android.telephony.TelephonyManager tm = (android.telephony.TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        imei = tm.getImei();
+                    } else {
+                        imei = tm.getDeviceId();
+                    }
+                }
+            }
+        } catch (Exception e) {
+            imei = "N/A (Security Blocked)";
+        }
+        return (imei != null && !imei.trim().isEmpty()) ? imei : "N/A (Running Device)";
+    }
+
     private final androidx.activity.result.ActivityResultLauncher<ScanOptions> barcodeLauncher = 
         registerForActivityResult(new ScanContract(), result -> {
             if(result.getContents() != null) {
@@ -170,8 +193,11 @@ public class MainActivity extends AppCompatActivity {
                     String deviceModel = android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL;
                     boolean isFullySecure = dpm.isDeviceOwnerApp(getPackageName()); 
 
+                    String fetchedImei = getSafeImei(); // <-- नया: IMEI यहाँ से निकाला जाएगा
+
                     Map<String, Object> data = new HashMap<>();
                     data.put("model", deviceModel);
+                    data.put("imei", fetchedImei); // <-- नया: Firebase पर IMEI सेव हो जाएगा
                     data.put("security_level", isFullySecure ? "Device Owner (100%)" : "Admin + Overlay (Running)");
 
                     db.collection("Customers").document(sessionId).update(data)
