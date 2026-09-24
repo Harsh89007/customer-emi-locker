@@ -3,8 +3,11 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
-    <!-- डिवाइस एडमिन और Kiosk Mode के लिए -->
     <uses-permission android:name="android.permission.MANAGE_DEVICE_ADMINS" />
+    
+    <!-- रनिंग फोन के ऑटो-डिटेक्शन और ओवरले लॉक के लिए नई परमिशन -->
+    <uses-permission android:name="android.permission.GET_ACCOUNTS" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:icon="@android:drawable/sym_def_app_icon"
