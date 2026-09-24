@@ -22,6 +22,7 @@ public class LockListenerService extends Service {
     private String mySessionId;
     private boolean isCurrentlyLocked = false;
     private Handler handler = new Handler();
+    private SharedPreferences prefs;
 
     private Runnable lockEnforcer = new Runnable() {
         @Override
@@ -39,7 +40,6 @@ public class LockListenerService extends Service {
     public void onCreate() {
         super.onCreate();
         
-        // 1. Android को सर्विस न मारने का आदेश (VIP Foreground Mode)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel("EMI_SEC", "Security Sync", NotificationManager.IMPORTANCE_MIN);
             channel.setShowBadge(false);
@@ -49,12 +49,12 @@ public class LockListenerService extends Service {
             Notification notification = new Notification.Builder(this, "EMI_SEC")
                 .setContentTitle("Security Active")
                 .setContentText("Device is protected")
-                .setSmallIcon(android.R.drawable.ic_secure) // तुम्हारे ऐप का डिफॉल्ट आइकॉन
+                .setSmallIcon(android.R.drawable.ic_secure)
                 .build();
             startForeground(1001, notification);
         }
 
-        SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
+        prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
         mySessionId = prefs.getString("session_id", null);
         
         if (mySessionId == null) {
@@ -65,6 +65,13 @@ public class LockListenerService extends Service {
         dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
         adminComponent = new ComponentName(this, MyAdminReceiver.class);
         
+        // 1. फोन चालू होते ही ऑफलाइन मेमोरी चेक करो और तुरंत लॉक करो (बिना इंटरनेट के)
+        isCurrentlyLocked = prefs.getBoolean("is_offline_locked", false);
+        if (isCurrentlyLocked) {
+            handler.post(lockEnforcer);
+        }
+        
+        // 2. Firebase से ऑनलाइन रियल-टाइम अपडेट (जब इंटरनेट चालू हो)
         FirebaseFirestore.getInstance().collection("Customers").document(mySessionId)
             .addSnapshotListener((snapshot, e) -> {
                 if (snapshot != null && snapshot.exists()) {
@@ -77,11 +84,13 @@ public class LockListenerService extends Service {
 
                     Boolean isLocked = snapshot.getBoolean("is_locked");
                     if (isLocked != null && isLocked) {
+                        prefs.edit().putBoolean("is_offline_locked", true).apply(); // लॉक स्टेट सेव
                         if (!isCurrentlyLocked) {
                             isCurrentlyLocked = true;
                             handler.post(lockEnforcer);
                         }
                     } else {
+                        prefs.edit().putBoolean("is_offline_locked", false).apply(); // अनलॉक स्टेट सेव
                         isCurrentlyLocked = false;
                     }
                 }
@@ -95,6 +104,7 @@ public class LockListenerService extends Service {
 
     private void releaseOwnershipAndUninstall() {
         isCurrentlyLocked = false;
+        prefs.edit().putBoolean("is_offline_locked", false).apply();
         Toast.makeText(this, "Device Released! Uninstalling...", Toast.LENGTH_LONG).show();
         
         try {
