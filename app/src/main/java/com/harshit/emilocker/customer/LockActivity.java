@@ -18,7 +18,7 @@ public class LockActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         
-        // 1. फोन को फुल स्क्रीन करना और नेविगेशन/स्टेटस बार ब्लॉक करना
+        // नेविगेशन बार और स्टेटस बार को पूरी तरह छुपाना
         getWindow().getDecorView().setSystemUiVisibility(
             View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
             View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
@@ -35,24 +35,17 @@ public class LockActivity extends Activity {
         dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
         try {
             if (dpm.isDeviceOwnerApp(getPackageName())) {
-                startLockTask(); // 100% Kiosk Mode
+                startLockTask(); // Kiosk Mode
             }
         } catch (Exception e) {}
 
         SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
         String sessionId = prefs.getString("session_id", null);
 
-        // 2. ऑटोमैटिक अनलॉक लॉजिक (कोई बटन नहीं)
         if (sessionId != null) {
             listener = FirebaseFirestore.getInstance().collection("Customers").document(sessionId)
                 .addSnapshotListener((snapshot, error) -> {
-                    if (snapshot != null) {
-                        // अगर डीलर ने रिलीज़/डिलीट कर दिया
-                        if (!snapshot.exists()) {
-                            unlockAndClose();
-                            return;
-                        }
-                        // अगर डीलर ने अनलॉक कर दिया
+                    if (snapshot != null && snapshot.exists()) {
                         Boolean isLocked = snapshot.getBoolean("is_locked");
                         if (isLocked != null && !isLocked) {
                             unlockAndClose();
@@ -62,6 +55,22 @@ public class LockActivity extends Activity {
         }
     }
 
+    // अगर कस्टमर होम बटन दबाने की कोशिश करता है, तो यह तुरंत वापस खुलेगा
+    @Override
+    protected void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        if (listener != null) {
+            Intent i = new Intent(this, LockActivity.class);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(i);
+        }
+    }
+
+    @Override
+    public void onBackPressed() {
+        // बैक बटन को काम करने से रोक दिया गया है
+    }
+
     private void unlockAndClose() {
         try {
             if (dpm.isDeviceOwnerApp(getPackageName())) {
@@ -69,12 +78,7 @@ public class LockActivity extends Activity {
             }
         } catch (Exception e) {}
         if (listener != null) listener.remove();
-        finish(); // लाल स्क्रीन अपने आप हट जाएगी
-    }
-
-    @Override
-    public void onBackPressed() {
-        // बैक बटन काम नहीं करेगा
+        finish();
     }
 }
 
