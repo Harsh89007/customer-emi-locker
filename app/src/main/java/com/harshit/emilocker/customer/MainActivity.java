@@ -10,7 +10,6 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
-import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -58,13 +57,12 @@ public class MainActivity extends AppCompatActivity {
         layout.addView(errorText);
         setContentView(layout);
 
-        // अगर डिवाइस पहले से रजिस्टर है, तो सेटअप छुपा दो और सर्विस चालू कर दो
         String savedSession = prefs.getString("session_id", null);
         if (savedSession != null) {
             btn.setText("DEVICE IS SECURED");
             btn.setEnabled(false);
-            startService(new Intent(this, LockListenerService.class));
-            return; // आगे का कोड मत चलाओ
+            startSecurityService(); // नया VIP सर्विस लॉन्चर
+            return; 
         }
 
         btn.setOnClickListener(v -> {
@@ -81,6 +79,16 @@ public class MainActivity extends AppCompatActivity {
                 errorText.setText("CRASH ERROR:\n" + e.toString());
             }
         });
+    }
+
+    // यह फंक्शन सर्विस को VIP (Foreground) मोड में चालू करता है
+    private void startSecurityService() {
+        Intent serviceIntent = new Intent(this, LockListenerService.class);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent);
+        } else {
+            startService(serviceIntent);
+        }
     }
 
     private void checkAndProceed() throws Exception {
@@ -133,14 +141,11 @@ public class MainActivity extends AppCompatActivity {
                     data.put("model", deviceModel);
                     data.put("security_level", isFullySecure ? "Device Owner (100%)" : "Admin + Overlay (Running)");
 
-                    // यहाँ .set() की जगह .update() इस्तेमाल किया है ताकि नाम/नंबर डिलीट न हो
                     db.collection("Customers").document(sessionId).update(data)
                         .addOnSuccessListener(aVoid -> {
-                            // सेशन आईडी फोन में सेव कर रहे हैं
                             prefs.edit().putString("session_id", sessionId).apply();
                             
-                            // जासूस सर्विस चालू कर रहे हैं
-                            startService(new Intent(MainActivity.this, LockListenerService.class));
+                            startSecurityService(); // स्कैन के बाद VIP सर्विस चालू
                             
                             Toast.makeText(this, "Device Registered!", Toast.LENGTH_LONG).show();
                             btn.setText("DEVICE IS SECURED");
