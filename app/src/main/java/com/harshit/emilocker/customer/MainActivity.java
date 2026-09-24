@@ -161,22 +161,17 @@ public class MainActivity extends AppCompatActivity {
         barcodeLauncher.launch(options);
     }
 
-    // --- नया: क्रैश-प्रूफ IMEI निकालने वाला स्मार्ट फंक्शन ---
+        // --- नया: क्रैश-प्रूफ IMEI निकालने वाला सही फंक्शन ---
     private String getSafeImei() {
         String imei = "N/A (Running Device)";
         try {
             if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
-                // Android 9 (API 28) और उसके बाद वाले ओनर फोन्स के लिए Google का असली तरीका
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    imei = dpm.getImei(adminComponent);
+                // सही तरीका: TelephonyManager का इस्तेमाल करें
+                android.telephony.TelephonyManager tm = (android.telephony.TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    imei = tm.getImei();
                 } else {
-                    // पुराने एंड्रॉइड वर्ज़न्स के लिए बैकअप तरीका
-                    android.telephony.TelephonyManager tm = (android.telephony.TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        imei = tm.getImei();
-                    } else {
-                        imei = tm.getDeviceId();
-                    }
+                    imei = tm.getDeviceId();
                 }
             }
         } catch (Exception e) {
@@ -184,7 +179,7 @@ public class MainActivity extends AppCompatActivity {
         }
         return (imei != null && !imei.trim().isEmpty()) ? imei : "N/A (Running Device)";
     }
-
+    
     private final androidx.activity.result.ActivityResultLauncher<ScanOptions> barcodeLauncher = 
         registerForActivityResult(new ScanContract(), result -> {
             if(result.getContents() != null) {
