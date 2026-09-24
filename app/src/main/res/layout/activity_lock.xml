@@ -7,12 +7,12 @@
     android:background="#EF4444"
     android:padding="20dp">
 
+    <!-- यहाँ नया लोगो सेट कर दिया गया है -->
     <ImageView
-        android:layout_width="80dp"
-        android:layout_height="80dp"
-        android:src="@android:drawable/ic_secure"
-        android:layout_marginBottom="16dp"
-        android:tint="#FFFFFF"/>
+        android:layout_width="100dp"
+        android:layout_height="100dp"
+        android:src="@drawable/ic_app_logo"
+        android:layout_marginBottom="16dp" />
 
     <TextView
         android:layout_width="wrap_content"
@@ -32,7 +32,7 @@
         android:textAlignment="center"
         android:layout_marginBottom="30dp"/>
 
-    <!-- QR Code के लिए ID सेट कर दी गई है -->
+    <!-- QR Code के लिए ID -->
     <ImageView
         android:id="@+id/qr_code_image"
         android:layout_width="250dp"
@@ -48,3 +48,4 @@
         android:textSize="14sp"
         android:layout_marginTop="10dp"/>
 </LinearLayout>
+
