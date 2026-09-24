@@ -6,13 +6,9 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.graphics.PixelFormat;
 import android.net.Uri;
-import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
-import android.view.LayoutInflater;
-import android.view.View;
-import android.view.WindowManager;
 import android.widget.Toast;
 import com.google.firebase.firestore.FirebaseFirestore;
 
@@ -20,13 +16,26 @@ public class LockListenerService extends Service {
     private DevicePolicyManager dpm;
     private ComponentName adminComponent;
     private String mySessionId;
-    
-    private View overlayView;
-    private WindowManager windowManager;
+    private boolean isCurrentlyLocked = false;
+    private Handler handler = new Handler();
+
+    // यह हर 1.5 सेकंड में चेक करेगा और लॉक स्क्रीन को हटने नहीं देगा
+    private Runnable lockEnforcer = new Runnable() {
+        @Override
+        public void run() {
+            if (isCurrentlyLocked) {
+                Intent lockIntent = new Intent(LockListenerService.this, LockActivity.class);
+                lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                startActivity(lockIntent);
+                handler.postDelayed(this, 1500); // 1.5 सेकंड का अग्रेसिव लूप
+            }
+        }
+    };
 
     @Override
     public void onCreate() {
         super.onCreate();
+        
         SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
         mySessionId = prefs.getString("session_id", null);
         
@@ -40,80 +49,37 @@ public class LockListenerService extends Service {
         
         FirebaseFirestore.getInstance().collection("Customers").document(mySessionId)
             .addSnapshotListener((snapshot, e) -> {
-                if (snapshot != null) {
-                    // 1. रिलीज़ बग फिक्स: अगर डीलर ने डेटा डिलीट कर दिया (!exists)
-                    if (!snapshot.exists() || (snapshot.getBoolean("is_released") != null && snapshot.getBoolean("is_released"))) {
+                if (snapshot != null && snapshot.exists()) {
+                    
+                    Boolean isReleased = snapshot.getBoolean("is_released");
+                    if (isReleased != null && isReleased) {
                         releaseOwnershipAndUninstall();
                         return;
                     }
 
-                    // 2. लॉक / अनलॉक लॉजिक
                     Boolean isLocked = snapshot.getBoolean("is_locked");
                     if (isLocked != null && isLocked) {
-                        lockDevice();
+                        if (!isCurrentlyLocked) {
+                            isCurrentlyLocked = true;
+                            handler.post(lockEnforcer); // लूप चालू करो
+                        }
                     } else {
-                        unlockDevice();
+                        isCurrentlyLocked = false; // अनलॉक होने पर लूप बंद करो
                     }
                 }
             });
     }
 
-    private void lockDevice() {
-        if (dpm.isDeviceOwnerApp(getPackageName())) {
-            // New Device: Activity Kiosk Mode
-            Intent lockIntent = new Intent(this, LockActivity.class);
-            lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-            startActivity(lockIntent);
-        } else {
-            // Running Device: 100% Blocking Overlay Screen
-            showOverlayLock();
-        }
-    }
-
-    private void unlockDevice() {
-        hideOverlayLock();
-        // (LockActivity अपने आप बंद हो जाएगी क्योंकि उसमें भी Firebase Listener है)
-    }
-
-    // Running Device के लिए अनब्रेकेबल लाल स्क्रीन (Overlay)
-    private void showOverlayLock() {
-        if (overlayView == null) {
-            windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
-            LayoutInflater inflater = (LayoutInflater) getSystemService(LAYOUT_INFLATER_SERVICE);
-            overlayView = inflater.inflate(R.layout.activity_lock, null);
-
-            int layoutType = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ?
-                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
-                    WindowManager.LayoutParams.TYPE_PHONE;
-
-            WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-                    WindowManager.LayoutParams.MATCH_PARENT,
-                    WindowManager.LayoutParams.MATCH_PARENT,
-                    layoutType,
-                    WindowManager.LayoutParams.FLAG_FULLSCREEN |
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
-                    WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
-                    PixelFormat.TRANSLUCENT);
-
-            try {
-                windowManager.addView(overlayView, params);
-            } catch (Exception e) {}
-        }
-    }
-
-    private void hideOverlayLock() {
-        if (overlayView != null && windowManager != null) {
-            try {
-                windowManager.removeView(overlayView);
-            } catch (Exception e) {}
-            overlayView = null;
-        }
+    // यह कमांड ऐप बंद होने के बाद भी सर्विस को बैकग्राउंड में दोबारा ज़िंदा कर देता है
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        return START_STICKY; 
     }
 
     private void releaseOwnershipAndUninstall() {
+        isCurrentlyLocked = false;
         Toast.makeText(this, "Device Released! Uninstalling...", Toast.LENGTH_LONG).show();
-        hideOverlayLock();
-
+        
         try {
             if (dpm.isDeviceOwnerApp(getPackageName())) {
                 dpm.clearDeviceOwnerApp(getPackageName());
@@ -133,3 +99,4 @@ public class LockListenerService extends Service {
     @Override
     public IBinder onBind(Intent intent) { return null; }
 }
+
