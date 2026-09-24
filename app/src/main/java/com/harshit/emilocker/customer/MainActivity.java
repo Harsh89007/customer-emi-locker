@@ -4,11 +4,13 @@ import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -26,19 +28,22 @@ public class MainActivity extends AppCompatActivity {
     private DevicePolicyManager dpm;
     private ComponentName adminComponent;
     private TextView errorText;
+    private Button btn;
+    private SharedPreferences prefs;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         
-        // 1. बिना XML के सीधा Java UI (100% क्रैश-प्रूफ ढांचा)
+        prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
+        
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setGravity(android.view.Gravity.CENTER);
         layout.setPadding(50, 50, 50, 50);
         layout.setBackgroundColor(Color.parseColor("#0F172A"));
 
-        Button btn = new Button(this);
+        btn = new Button(this);
         btn.setText("START DEVICE SETUP");
         btn.setBackgroundColor(Color.parseColor("#38BDF8"));
         btn.setTextColor(Color.BLACK);
@@ -53,7 +58,15 @@ public class MainActivity extends AppCompatActivity {
         layout.addView(errorText);
         setContentView(layout);
 
-        // 2. बटन दबाने के बाद ही सारे रिस्की काम होंगे, ताकि ऐप क्रैश न हो
+        // अगर डिवाइस पहले से रजिस्टर है, तो सेटअप छुपा दो और सर्विस चालू कर दो
+        String savedSession = prefs.getString("session_id", null);
+        if (savedSession != null) {
+            btn.setText("DEVICE IS SECURED");
+            btn.setEnabled(false);
+            startService(new Intent(this, LockListenerService.class));
+            return; // आगे का कोड मत चलाओ
+        }
+
         btn.setOnClickListener(v -> {
             try {
                 errorText.setText("Checking Security System...");
@@ -65,8 +78,7 @@ public class MainActivity extends AppCompatActivity {
                 
                 checkAndProceed();
             } catch (Exception e) {
-                // अगर कोई एरर होगा, तो क्रैश होने के बजाय यहाँ लाल रंग में लिख जाएगा
-                errorText.setText("CRASH ERROR DETAILS:\n" + e.toString());
+                errorText.setText("CRASH ERROR:\n" + e.toString());
             }
         });
     }
@@ -75,7 +87,6 @@ public class MainActivity extends AppCompatActivity {
         boolean isDeviceOwner = dpm.isDeviceOwnerApp(getPackageName());
 
         if (isDeviceOwner) {
-            startService(new Intent(this, LockListenerService.class));
             startQRScanner();
             return;
         }
@@ -100,7 +111,6 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        startService(new Intent(this, LockListenerService.class));
         startQRScanner();
     }
 
@@ -121,16 +131,23 @@ public class MainActivity extends AppCompatActivity {
 
                     Map<String, Object> data = new HashMap<>();
                     data.put("model", deviceModel);
-                    data.put("is_locked", false);
-                    data.put("is_released", false);
                     data.put("security_level", isFullySecure ? "Device Owner (100%)" : "Admin + Overlay (Running)");
 
-                    db.collection("Customers").document(sessionId).set(data)
+                    // यहाँ .set() की जगह .update() इस्तेमाल किया है ताकि नाम/नंबर डिलीट न हो
+                    db.collection("Customers").document(sessionId).update(data)
                         .addOnSuccessListener(aVoid -> {
+                            // सेशन आईडी फोन में सेव कर रहे हैं
+                            prefs.edit().putString("session_id", sessionId).apply();
+                            
+                            // जासूस सर्विस चालू कर रहे हैं
+                            startService(new Intent(MainActivity.this, LockListenerService.class));
+                            
                             Toast.makeText(this, "Device Registered!", Toast.LENGTH_LONG).show();
-                            finish();
+                            btn.setText("DEVICE IS SECURED");
+                            btn.setEnabled(false);
+                            errorText.setText("");
                         }).addOnFailureListener(e -> {
-                            errorText.setText("Firebase Error: " + e.getMessage());
+                            errorText.setText("Firebase Sync Error: " + e.getMessage());
                         });
                 } catch (Exception e) {
                     errorText.setText("Scanner Error: " + e.toString());
@@ -140,4 +157,3 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 }
-
