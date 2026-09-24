@@ -75,24 +75,35 @@ public class LockListenerService extends Service {
             showUnbreakableLock();
         }
         
-        // 3. Firebase से रियल-टाइम अपडेट
+        // 3. Firebase से रियल-टाइम अपडेट (Offline-to-Online Fix के साथ)
         FirebaseFirestore.getInstance().collection("Customers").document(mySessionId)
             .addSnapshotListener((snapshot, e) -> {
-                if (snapshot != null && snapshot.exists()) {
-                    
-                    Boolean isReleased = snapshot.getBoolean("is_released");
-                    if (isReleased != null && isReleased) {
-                        releaseOwnershipAndUninstall();
-                        return;
-                    }
+                if (e != null) {
+                    return; // अगर नेटवर्क एरर हो तो कुछ मत करो, ऑफलाइन लॉक काम करता रहेगा
+                }
+                
+                if (snapshot != null) {
+                    if (snapshot.exists()) {
+                        // अगर डेटाबेस में कस्टमर मौजूद है
+                        Boolean isReleased = snapshot.getBoolean("is_released");
+                        if (isReleased != null && isReleased) {
+                            releaseOwnershipAndUninstall();
+                            return;
+                        }
 
-                    Boolean isLocked = snapshot.getBoolean("is_locked");
-                    if (isLocked != null && isLocked) {
-                        prefs.edit().putBoolean("is_offline_locked", true).apply();
-                        showUnbreakableLock();
+                        Boolean isLocked = snapshot.getBoolean("is_locked");
+                        if (isLocked != null && isLocked) {
+                            prefs.edit().putBoolean("is_offline_locked", true).apply();
+                            showUnbreakableLock();
+                        } else {
+                            prefs.edit().putBoolean("is_offline_locked", false).apply();
+                            hideLock();
+                        }
                     } else {
-                        prefs.edit().putBoolean("is_offline_locked", false).apply();
-                        hideLock();
+                        // सबसे ज़रूरी नया लॉजिक: 
+                        // अगर Firebase से कस्टमर का डेटा डिलीट कर दिया गया है (Snapshot does not exist)
+                        // तो ऐप अपने-आप को तुरंत रिलीज़ करके हटा लेगा।
+                        releaseOwnershipAndUninstall();
                     }
                 }
             });
@@ -106,7 +117,6 @@ public class LockListenerService extends Service {
             LayoutInflater inflater = (LayoutInflater) getSystemService(LAYOUT_INFLATER_SERVICE);
             lockViewOverlay = inflater.inflate(R.layout.activity_lock, null);
 
-            // --- नया: डायनामिक QR कोड जनरेट करने का लॉजिक ---
             ImageView qrCodeImage = lockViewOverlay.findViewById(R.id.qr_code_image);
             FirebaseFirestore.getInstance().collection("AdminSettings").document("PaymentInfo")
                 .get().addOnSuccessListener(documentSnapshot -> {
@@ -126,7 +136,6 @@ public class LockListenerService extends Service {
                         }
                     }
                 });
-            // ------------------------------------------------
 
             int layoutType = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ?
                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
@@ -159,7 +168,7 @@ public class LockListenerService extends Service {
         if (isOverlayShowing && lockViewOverlay != null && windowManager != null) {
             try {
                 windowManager.removeView(lockViewOverlay);
-            } catch (Exception e) {}
+            } catch (Exception ignored) {}
             isOverlayShowing = false;
         }
     }
