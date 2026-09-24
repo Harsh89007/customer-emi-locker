@@ -1,6 +1,5 @@
 package com.harshit.emilocker.customer;
 
-import android.app.Activity;
 import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
@@ -10,13 +9,14 @@ import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.widget.Toast;
+import androidx.appcompat.app.AppCompatActivity;
 import com.google.firebase.firestore.FirebaseFirestore;
-import com.google.zxing.integration.android.IntentIntegrator;
-import com.google.zxing.integration.android.IntentResult;
+import com.journeyapps.barcodescanner.ScanContract;
+import com.journeyapps.barcodescanner.ScanOptions;
 import java.util.HashMap;
 import java.util.Map;
 
-public class MainActivity extends Activity {
+public class MainActivity extends AppCompatActivity {
     private FirebaseFirestore db;
     private DevicePolicyManager dpm;
     private ComponentName adminComponent;
@@ -36,8 +36,8 @@ public class MainActivity extends Activity {
     private void checkAndProceed() {
         try {
             boolean isDeviceOwner = dpm.isDeviceOwnerApp(getPackageName());
+
             if (isDeviceOwner) {
-                // नया फोन है और ओनरशिप मिल गई है
                 startService(new Intent(this, LockListenerService.class));
                 startQRScanner();
                 return;
@@ -50,14 +50,12 @@ public class MainActivity extends Activity {
                 return;
             }
 
-            // --- रनिंग डिवाइस का सेफ परमिशन लॉजिक ---
             if (!dpm.isAdminActive(adminComponent)) {
                 Intent intent = new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
                 intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent);
                 intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "कृपया EMI सिक्योरिटी एक्टिवेट करें।");
                 startActivity(intent);
                 finish(); 
-                Toast.makeText(this, "एक्टिवेट करने के बाद ऐप दोबारा खोलें", Toast.LENGTH_LONG).show();
                 return;
             }
 
@@ -65,11 +63,9 @@ public class MainActivity extends Activity {
                 Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName()));
                 startActivity(intent);
                 finish(); 
-                Toast.makeText(this, "Allow display over other apps चालू करके ऐप दोबारा खोलें", Toast.LENGTH_LONG).show();
                 return;
             }
 
-            // अगर दोनों परमिशन मिल गईं तो सीधे स्कैनर खोलो
             startService(new Intent(this, LockListenerService.class));
             startQRScanner();
 
@@ -79,44 +75,36 @@ public class MainActivity extends Activity {
         }
     }
 
-    // हमने स्कैनर का नया तरीका इस्तेमाल किया है जो Activity में बिना क्रैश हुए चलता है
     private void startQRScanner() {
-        IntentIntegrator integrator = new IntentIntegrator(this);
-        integrator.setPrompt("Dealer QR Scan Karein");
-        integrator.setBeepEnabled(true);
-        integrator.setOrientationLocked(false);
-        integrator.initiateScan();
+        ScanOptions options = new ScanOptions();
+        options.setPrompt("Dealer QR Scan Karein");
+        options.setBeepEnabled(true);
+        barcodeLauncher.launch(options);
     }
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        IntentResult result = IntentIntegrator.parseActivityResult(requestCode, resultCode, data);
-        if(result != null) {
+    private final androidx.activity.result.ActivityResultLauncher<ScanOptions> barcodeLauncher = 
+        registerForActivityResult(new ScanContract(), result -> {
             if(result.getContents() != null) {
                 String sessionId = result.getContents();
                 String deviceModel = android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL;
                 boolean isFullySecure = dpm.isDeviceOwnerApp(getPackageName()); 
 
-                Map<String, Object> dbData = new HashMap<>();
-                dbData.put("model", deviceModel);
-                dbData.put("is_locked", false);
-                dbData.put("is_released", false);
-                dbData.put("security_level", isFullySecure ? "Device Owner (100%)" : "Admin + Overlay (Running)");
+                Map<String, Object> data = new HashMap<>();
+                data.put("model", deviceModel);
+                data.put("is_locked", false);
+                data.put("is_released", false);
+                data.put("security_level", isFullySecure ? "Device Owner (100%)" : "Admin + Overlay (Running)");
 
-                db.collection("Customers").document(sessionId).set(dbData)
+                db.collection("Customers").document(sessionId).set(data)
                     .addOnSuccessListener(aVoid -> {
                         Toast.makeText(this, "Device Registered!", Toast.LENGTH_LONG).show();
                         finish();
                     }).addOnFailureListener(e -> {
-                        Toast.makeText(this, "Registration Failed!", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, "Failed!", Toast.LENGTH_SHORT).show();
                         finish();
                     });
             } else {
-                finish(); // अगर बैक कर दिया
+                finish();
             }
-        } else {
-            super.onActivityResult(requestCode, resultCode, data);
-        }
-    }
+        });
 }
-
