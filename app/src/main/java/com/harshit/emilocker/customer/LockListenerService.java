@@ -9,6 +9,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
 import android.graphics.PixelFormat;
 import android.net.Uri;
 import android.os.Build;
@@ -17,8 +18,13 @@ import android.os.IBinder;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.WindowManager;
+import android.widget.ImageView;
 import android.widget.Toast;
 import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.MultiFormatWriter;
+import com.google.zxing.common.BitMatrix;
+import com.journeyapps.barcodescanner.BarcodeEncoder;
 
 public class LockListenerService extends Service {
     private DevicePolicyManager dpm;
@@ -99,6 +105,28 @@ public class LockListenerService extends Service {
         try {
             LayoutInflater inflater = (LayoutInflater) getSystemService(LAYOUT_INFLATER_SERVICE);
             lockViewOverlay = inflater.inflate(R.layout.activity_lock, null);
+
+            // --- नया: डायनामिक QR कोड जनरेट करने का लॉजिक ---
+            ImageView qrCodeImage = lockViewOverlay.findViewById(R.id.qr_code_image);
+            FirebaseFirestore.getInstance().collection("AdminSettings").document("PaymentInfo")
+                .get().addOnSuccessListener(documentSnapshot -> {
+                    if (documentSnapshot.exists()) {
+                        String adminUpi = documentSnapshot.getString("upi_id");
+                        if (adminUpi != null && !adminUpi.isEmpty()) {
+                            try {
+                                String upiUrl = "upi://pay?pa=" + adminUpi + "&pn=EMI_Payment&cu=INR";
+                                MultiFormatWriter writer = new MultiFormatWriter();
+                                BitMatrix matrix = writer.encode(upiUrl, BarcodeFormat.QR_CODE, 400, 400);
+                                BarcodeEncoder encoder = new BarcodeEncoder();
+                                Bitmap bitmap = encoder.createBitmap(matrix);
+                                qrCodeImage.setImageBitmap(bitmap);
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    }
+                });
+            // ------------------------------------------------
 
             int layoutType = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ?
                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
