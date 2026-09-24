@@ -1,5 +1,8 @@
 package com.harshit.emilocker.customer;
 
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.app.Service;
 import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
@@ -7,6 +10,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.widget.Toast;
@@ -19,7 +23,6 @@ public class LockListenerService extends Service {
     private boolean isCurrentlyLocked = false;
     private Handler handler = new Handler();
 
-    // यह हर 1.5 सेकंड में चेक करेगा और लॉक स्क्रीन को हटने नहीं देगा
     private Runnable lockEnforcer = new Runnable() {
         @Override
         public void run() {
@@ -27,7 +30,7 @@ public class LockListenerService extends Service {
                 Intent lockIntent = new Intent(LockListenerService.this, LockActivity.class);
                 lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
                 startActivity(lockIntent);
-                handler.postDelayed(this, 1500); // 1.5 सेकंड का अग्रेसिव लूप
+                handler.postDelayed(this, 1500);
             }
         }
     };
@@ -36,6 +39,21 @@ public class LockListenerService extends Service {
     public void onCreate() {
         super.onCreate();
         
+        // 1. Android को सर्विस न मारने का आदेश (VIP Foreground Mode)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel("EMI_SEC", "Security Sync", NotificationManager.IMPORTANCE_MIN);
+            channel.setShowBadge(false);
+            NotificationManager manager = getSystemService(NotificationManager.class);
+            if (manager != null) manager.createNotificationChannel(channel);
+
+            Notification notification = new Notification.Builder(this, "EMI_SEC")
+                .setContentTitle("Security Active")
+                .setContentText("Device is protected")
+                .setSmallIcon(android.R.drawable.ic_secure) // तुम्हारे ऐप का डिफॉल्ट आइकॉन
+                .build();
+            startForeground(1001, notification);
+        }
+
         SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
         mySessionId = prefs.getString("session_id", null);
         
@@ -61,16 +79,15 @@ public class LockListenerService extends Service {
                     if (isLocked != null && isLocked) {
                         if (!isCurrentlyLocked) {
                             isCurrentlyLocked = true;
-                            handler.post(lockEnforcer); // लूप चालू करो
+                            handler.post(lockEnforcer);
                         }
                     } else {
-                        isCurrentlyLocked = false; // अनलॉक होने पर लूप बंद करो
+                        isCurrentlyLocked = false;
                     }
                 }
             });
     }
 
-    // यह कमांड ऐप बंद होने के बाद भी सर्विस को बैकग्राउंड में दोबारा ज़िंदा कर देता है
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         return START_STICKY; 
@@ -93,10 +110,13 @@ public class LockListenerService extends Service {
         intent.setData(Uri.parse("package:" + getPackageName()));
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         startActivity(intent);
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE);
+        }
         stopSelf();
     }
 
     @Override
     public IBinder onBind(Intent intent) { return null; }
 }
-
