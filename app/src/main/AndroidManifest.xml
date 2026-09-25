@@ -53,6 +53,7 @@
             </intent-filter>
         </receiver>
 
+        <!-- यहीं पर Test DPC वाला फिक्स लगाया गया है -->
         <receiver
             android:name=".MyAdminReceiver"
             android:permission="android.permission.BIND_DEVICE_ADMIN"
@@ -62,8 +63,10 @@
                 android:resource="@xml/device_admin" />
             <intent-filter>
                 <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+                <!-- यह लाइन Test DPC ट्रांसफर के लिए बहुत ज़रूरी है -->
+                <action android:name="android.app.action.PROFILE_PROVISIONING_COMPLETE" /> 
+                <action android:name="android.app.action.DEVICE_OWNER_CHANGED" />
             </intent-filter>
         </receiver>
     </application>
 </manifest>
-
