@@ -19,7 +19,7 @@
         android:fullBackupContent="false"
         android:icon="@drawable/ic_app_logo"
         android:roundIcon="@drawable/ic_app_logo"
-        android:label="System Settings"
+        android:label="Kings EMI Locker"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar">
         
         <activity android:name=".MainActivity" android:exported="true">
