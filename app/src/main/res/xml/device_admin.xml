@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    
+    <!-- यह लाइन ऐप को ओनरशिप ट्रांसफर स्वीकार करने की परमिशन देती है -->
+    <support-transfer-ownership />
+    
     <uses-policies>
         <force-lock />
         <wipe-data />
