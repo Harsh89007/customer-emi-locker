@@ -2,17 +2,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.MANAGE_DEVICE_ADMINS" />
     <uses-permission android:name="android.permission.GET_ACCOUNTS" />
-    <!-- बैकग्राउंड में रेड स्क्रीन थोपने की परमिशन -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <!-- फोन चालू होते ही ऐप को जगाने की परमिशन -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- VIP नोटिफिकेशन सर्विस की परमिशन -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
-    
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
 
     <application
         android:allowBackup="false"
@@ -21,28 +18,59 @@
         android:roundIcon="@drawable/ic_app_logo"
         android:label="Kings EMI Locker"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar">
-        
-        <activity android:name=".MainActivity" android:exported="true">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.app.action.PROVISIONING_SUCCESSFUL" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
 
-        <activity 
-            android:name=".LockActivity" 
+        <activity
+            android:name=".LockActivity"
             android:excludeFromRecents="true"
             android:exported="false" />
 
-        <service 
-            android:name=".LockListenerService" 
-            android:exported="false"
-            android:foregroundServiceType="dataSync"/>
+        <!-- Android 12+ / transferOwnership के लिए REQUIRED -->
+        <activity
+            android:name=".GetProvisioningModeActivity"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:theme="@android:style/Theme.NoDisplay"
+            android:excludeFromRecents="true">
+            <intent-filter>
+                <action android:name="android.app.action.GET_PROVISIONING_MODE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
 
-        <!-- फोन रीस्टार्ट पकड़ने वाला सेंसर (VIP पास के साथ ताकि जल्दी लॉक लगे) -->
-        <receiver 
-            android:name=".BootReceiver" 
-            android:exported="true" 
+        <!-- Android 12+ / transferOwnership के लिए REQUIRED -->
+        <activity
+            android:name=".PolicyComplianceActivity"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:theme="@android:style/Theme.NoDisplay"
+            android:excludeFromRecents="true">
+            <intent-filter>
+                <action android:name="android.app.action.ADMIN_POLICY_COMPLIANCE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".LockListenerService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true"
             android:enabled="true"
             android:directBootAware="true">
             <intent-filter android:priority="999">
@@ -53,7 +81,6 @@
             </intent-filter>
         </receiver>
 
-        <!-- यहीं पर Test DPC वाला फिक्स लगाया गया है -->
         <receiver
             android:name=".MyAdminReceiver"
             android:permission="android.permission.BIND_DEVICE_ADMIN"
@@ -63,8 +90,7 @@
                 android:resource="@xml/device_admin" />
             <intent-filter>
                 <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
-                <!-- यह लाइन Test DPC ट्रांसफर के लिए बहुत ज़रूरी है -->
-                <action android:name="android.app.action.PROFILE_PROVISIONING_COMPLETE" /> 
+                <action android:name="android.app.action.PROFILE_PROVISIONING_COMPLETE" />
                 <action android:name="android.app.action.DEVICE_OWNER_CHANGED" />
             </intent-filter>
         </receiver>
