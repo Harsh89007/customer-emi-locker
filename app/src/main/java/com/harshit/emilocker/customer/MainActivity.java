@@ -10,20 +10,24 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.view.Gravity;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
+
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.journeyapps.barcodescanner.ScanContract;
 import com.journeyapps.barcodescanner.ScanOptions;
+
 import java.util.HashMap;
 import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
+
     private FirebaseFirestore db;
     private DevicePolicyManager dpm;
     private ComponentName adminComponent;
@@ -31,16 +35,19 @@ public class MainActivity extends AppCompatActivity {
     private Button btn;
     private SharedPreferences prefs;
     private boolean autoStartRequested = false;
+    private boolean pendingAutoQr = false;
+    private boolean qrLaunched = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        
+
         prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
-        
+        initSdk();
+
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setGravity(android.view.Gravity.CENTER);
+        layout.setGravity(Gravity.CENTER);
         layout.setPadding(50, 50, 50, 50);
         layout.setBackgroundColor(Color.parseColor("#0F172A"));
 
@@ -63,24 +70,57 @@ public class MainActivity extends AppCompatActivity {
         if (savedSession != null) {
             btn.setText("DEVICE IS SECURED");
             btn.setEnabled(false);
-            startSecurityService(); 
-            return; 
+            startSecurityService();
+            return;
+        }
+
+        boolean fromTransfer = getIntent().getBooleanExtra(
+                MyAdminReceiver.EXTRA_OPEN_DEALER_QR, false);
+        boolean isOwner = dpm != null && dpm.isDeviceOwnerApp(getPackageName());
+
+        if (fromTransfer || isOwner) {
+            btn.setText("SCAN DEALER QR");
+            errorText.setText("नया फोन — Device Owner मिल गया। QR स्कैन करें।");
+            pendingAutoQr = true;
         }
 
         btn.setOnClickListener(v -> {
             try {
                 errorText.setText("Checking Security System...");
-                try { FirebaseApp.initializeApp(this); } catch (Exception ignored) {}
-                
-                db = FirebaseFirestore.getInstance();
-                dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
-                adminComponent = new ComponentName(this, MyAdminReceiver.class);
-                
+                initSdk();
                 checkAndProceed();
             } catch (Exception e) {
                 errorText.setText("CRASH ERROR:\n" + e.toString());
             }
         });
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (pendingAutoQr && !qrLaunched && prefs.getString("session_id", null) == null) {
+            qrLaunched = true;
+            startQRScanner();
+        }
+    }
+
+    private void initSdk() {
+        try {
+            FirebaseApp.initializeApp(this);
+        } catch (Exception ignored) {
+        }
+        if (db == null) {
+            try {
+                db = FirebaseFirestore.getInstance();
+            } catch (Exception ignored) {
+            }
+        }
+        if (dpm == null) {
+            dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
+        }
+        if (adminComponent == null) {
+            adminComponent = MyAdminReceiver.getComponentName(this);
+        }
     }
 
     private void startSecurityService() {
@@ -93,7 +133,8 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void checkAndProceed() throws Exception {
-        boolean isDeviceOwner = dpm.isDeviceOwnerApp(getPackageName());
+        initSdk();
+        boolean isDeviceOwner = dpm != null && dpm.isDeviceOwnerApp(getPackageName());
 
         if (isDeviceOwner) {
             startQRScanner();
@@ -102,7 +143,7 @@ public class MainActivity extends AppCompatActivity {
 
         int setupComplete = Settings.Secure.getInt(getContentResolver(), "user_setup_complete", 0);
         if (setupComplete == 0) {
-            errorText.setText("यह नया डिवाइस है! कृपया Test DPC से ओनरशिप लें!");
+            errorText.setText("यह नया डिवाइस है। पहले Loader से Device Owner बनाएँ, फिर Transfer करें।");
             return;
         }
 
@@ -115,7 +156,9 @@ public class MainActivity extends AppCompatActivity {
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
-            Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName()));
+            Intent intent = new Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + getPackageName()));
             startActivity(intent);
             return;
         }
@@ -132,14 +175,20 @@ public class MainActivity extends AppCompatActivity {
 
     private void requestAutoStartPermission() {
         try {
-            String manufacturer = android.os.Build.MANUFACTURER.toLowerCase();
+            String manufacturer = Build.MANUFACTURER.toLowerCase();
             Intent intent = new Intent();
             if ("xiaomi".equals(manufacturer)) {
-                intent.setComponent(new ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"));
+                intent.setComponent(new ComponentName(
+                        "com.miui.securitycenter",
+                        "com.miui.permcenter.autostart.AutoStartManagementActivity"));
             } else if ("oppo".equals(manufacturer) || "realme".equals(manufacturer)) {
-                intent.setComponent(new ComponentName("com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity"));
+                intent.setComponent(new ComponentName(
+                        "com.coloros.safecenter",
+                        "com.coloros.safecenter.permission.startup.StartupAppListActivity"));
             } else if ("vivo".equals(manufacturer)) {
-                intent.setComponent(new ComponentName("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"));
+                intent.setComponent(new ComponentName(
+                        "com.vivo.permissionmanager",
+                        "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"));
             } else {
                 throw new Exception("Custom intent not found");
             }
@@ -150,7 +199,7 @@ public class MainActivity extends AppCompatActivity {
             Uri uri = Uri.fromParts("package", getPackageName(), null);
             intent.setData(uri);
             startActivity(intent);
-            Toast.makeText(this, "Battery Usage में जाकर 'Background Activity' ON करें", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Battery Usage में जाकर Background Activity ON करें", Toast.LENGTH_LONG).show();
         }
     }
 
@@ -161,21 +210,20 @@ public class MainActivity extends AppCompatActivity {
         barcodeLauncher.launch(options);
     }
 
-    // --- नया: बिना परमिशन मांगे ऑटो-ग्रांट (Auto-Grant) और असली IMEI निकालने वाला फंक्शन ---
     private String getSafeImei() {
         String imei = "N/A (Running Device)";
         try {
             if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
-                
-                // 1. जादू: खुद को छुपकर READ_PHONE_STATE परमिशन देना (कोई पॉपअप नहीं आएगा)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    dpm.setPermissionGrantState(adminComponent, getPackageName(),
+                    dpm.setPermissionGrantState(
+                            adminComponent,
+                            getPackageName(),
                             android.Manifest.permission.READ_PHONE_STATE,
                             DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
                 }
 
-                // 2. परमिशन मिलने के बाद असली IMEI निकालना
-                android.telephony.TelephonyManager tm = (android.telephony.TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
+                android.telephony.TelephonyManager tm =
+                        (android.telephony.TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     imei = tm.getImei();
                 } else {
@@ -187,38 +235,49 @@ public class MainActivity extends AppCompatActivity {
         }
         return (imei != null && !imei.trim().isEmpty()) ? imei : "N/A (Running Device)";
     }
-    
-    private final androidx.activity.result.ActivityResultLauncher<ScanOptions> barcodeLauncher = 
-        registerForActivityResult(new ScanContract(), result -> {
-            if(result.getContents() != null) {
-                try {
-                    String sessionId = result.getContents();
-                    String deviceModel = android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL;
-                    boolean isFullySecure = dpm.isDeviceOwnerApp(getPackageName()); 
 
-                    String fetchedImei = getSafeImei(); // अब यह असली IMEI लाएगा!
+    private final androidx.activity.result.ActivityResultLauncher<ScanOptions> barcodeLauncher =
+            registerForActivityResult(new ScanContract(), result -> {
+                if (result.getContents() != null) {
+                    try {
+                        initSdk();
+                        String sessionId = result.getContents();
+                        String deviceModel = Build.MANUFACTURER + " " + Build.MODEL;
+                        boolean isFullySecure = dpm != null && dpm.isDeviceOwnerApp(getPackageName());
+                        String fetchedImei = getSafeImei();
 
-                    Map<String, Object> data = new HashMap<>();
-                    data.put("model", deviceModel);
-                    data.put("imei", fetchedImei); 
-                    data.put("security_level", isFullySecure ? "Device Owner (100%)" : "Admin + Overlay (Running)");
+                        Map<String, Object> data = new HashMap<>();
+                        data.put("model", deviceModel);
+                        data.put("imei", fetchedImei);
+                        data.put("security_level", isFullySecure
+                                ? "Device Owner (100%)"
+                                : "Admin + Overlay (Running)");
 
-                    db.collection("Customers").document(sessionId).update(data)
-                        .addOnSuccessListener(aVoid -> {
-                            prefs.edit().putString("session_id", sessionId).apply();
-                            startSecurityService(); 
-                            Toast.makeText(this, "Device Registered!", Toast.LENGTH_LONG).show();
-                            btn.setText("DEVICE IS SECURED");
-                            btn.setEnabled(false);
-                            errorText.setText("");
-                        }).addOnFailureListener(e -> {
-                            errorText.setText("Firebase Sync Error: " + e.getMessage());
-                        });
-                } catch (Exception e) {
-                    errorText.setText("Scanner Error: " + e.toString());
+                        if (db == null) {
+                            errorText.setText("Firebase not ready");
+                            return;
+                        }
+
+                        db.collection("Customers").document(sessionId).update(data)
+                                .addOnSuccessListener(aVoid -> {
+                                    prefs.edit().putString("session_id", sessionId).apply();
+                                    startSecurityService();
+                                    Toast.makeText(this, "Device Registered!", Toast.LENGTH_LONG).show();
+                                    btn.setText("DEVICE IS SECURED");
+                                    btn.setEnabled(false);
+                                    errorText.setText("");
+                                    pendingAutoQr = false;
+                                }).addOnFailureListener(e -> {
+                                    errorText.setText("Firebase Sync Error: " + e.getMessage());
+                                    qrLaunched = false;
+                                });
+                    } catch (Exception e) {
+                        errorText.setText("Scanner Error: " + e.toString());
+                        qrLaunched = false;
+                    }
+                } else {
+                    errorText.setText("Scan Cancelled — बटन दबाकर फिर स्कैन करें");
+                    qrLaunched = false;
                 }
-            } else {
-                errorText.setText("Scan Cancelled");
-            }
-        });
+            });
 }
