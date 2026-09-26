@@ -258,16 +258,16 @@ public class MainActivity extends AppCompatActivity {
                             return;
                         }
 
-                        db.collection("Customers").document(sessionId).update(data)
+                                db.collection("Customers").document(sessionId).update(data)
                                 .addOnSuccessListener(aVoid -> {
                                     prefs.edit().putString("session_id", sessionId).apply();
                                     startSecurityService();
-                                    Toast.makeText(this, "Device Registered!", Toast.LENGTH_LONG).show();
-                                    btn.setText("DEVICE IS SECURED");
-                                    btn.setEnabled(false);
-                                    errorText.setText("");
-                                    pendingAutoQr = false;
+                                    Toast.makeText(MainActivity.this, "Setup Complete! Device Secured.", Toast.LENGTH_LONG).show();
+                                    
+                                    // यह कमांड ऐप को तुरंत बंद करके कस्टमर को फ़ोन की होम स्क्रीन पर भेज देगा
+                                    finish(); 
                                 }).addOnFailureListener(e -> {
+                                    
                                     errorText.setText("Firebase Sync Error: " + e.getMessage());
                                     qrLaunched = false;
                                 });
