@@ -41,12 +41,6 @@ public class MyAdminReceiver extends DeviceAdminReceiver {
         openMainForDealerQr(context, true);
     }
 
-    @Override
-    public void onTransferOwnershipFailed(Context context, PersistableBundle bundle) {
-        super.onTransferOwnershipFailed(context, bundle);
-        Toast.makeText(context, "Ownership transfer failed", Toast.LENGTH_LONG).show();
-    }
-
     private void openMainForDealerQr(Context context, boolean fromTransfer) {
         Intent launchIntent = new Intent(context, MainActivity.class);
         launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
