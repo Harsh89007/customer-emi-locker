@@ -9,16 +9,29 @@ import android.os.Build;
 public class BootReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
-        // फोन रीस्टार्ट या चालू होने का एक्शन चेक करना
         if (intent != null && intent.getAction() != null) {
-            SharedPreferences prefs = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE);
+            
+            // नया लॉजिक: डायरेक्ट बूट (LOCKED_BOOT_COMPLETED) सपोर्ट के लिए Device Protected Context का इस्तेमाल
+            Context deviceContext = context;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                deviceContext = context.createDeviceProtectedStorageContext();
+            }
+
+            // अब हम सुरक्षित स्टोरेज से डेटा पढ़ रहे हैं, जो बिना पिन डाले भी एक्सेस हो जाता है
+            SharedPreferences prefs = deviceContext.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE);
             String sessionId = prefs.getString("session_id", null);
             boolean isOfflineLocked = prefs.getBoolean("is_offline_locked", false);
             
-            // अगर ऐप सेटअप हो चुका है (Session ID है), तभी आगे बढ़ो
             if (sessionId != null) {
+                // 1. अगर फोन लॉक था, तो सर्विस का इंतज़ार मत करो, तुरंत Lock स्क्रीन खोल दो (0 Second Delay)
+                if (isOfflineLocked) {
+                    Intent lockIntent = new Intent(context, LockActivity.class);
+                    lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    context.startActivity(lockIntent);
+                }
+
+                // 2. बैकग्राउंड सर्विस को स्टार्ट कर दो ताकि वो Firebase से कनेक्ट होकर लाइव स्टेटस चेक कर सके
                 try {
-                    // 1. सर्विस को तुरंत जगाओ (यह उठते ही Firebase चेक करेगी और अगर डिलीट हुआ होगा तो अनइंस्टॉल कर लेगी)
                     Intent serviceIntent = new Intent(context, LockListenerService.class);
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         context.startForegroundService(serviceIntent);
@@ -26,16 +39,10 @@ public class BootReceiver extends BroadcastReceiver {
                         context.startService(serviceIntent);
                     }
                 } catch (Exception e) {
-                    // 2. बैकअप प्लान: किसी वजह से अगर Android सर्विस को रोक दे, 
-                    // और फोन ऑफलाइन लॉक था, तो सीधा लाल स्क्रीन (LockActivity) खोल दो।
-                    if (isOfflineLocked) {
-                        Intent lockIntent = new Intent(context, LockActivity.class);
-                        lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                        context.startActivity(lockIntent);
-                    }
+                    // Service start failed exception handling
+                    e.printStackTrace();
                 }
             }
         }
     }
 }
-
