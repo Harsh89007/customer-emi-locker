@@ -6,9 +6,12 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
+import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.view.View;
 import android.view.WindowManager;
+import android.widget.Button;
 import android.widget.ImageView;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.ListenerRegistration;
@@ -42,6 +45,25 @@ public class LockActivity extends Activity {
         
         qrCodeImage = findViewById(R.id.qr_code_image);
 
+        // वाई-फाई बटन का लॉजिक (ऑफ़लाइन डेडलॉक से बचने के लिए)
+        Button btnConnectWifi = findViewById(R.id.btn_connect_wifi);
+        if (btnConnectWifi != null) {
+            btnConnectWifi.setOnClickListener(v -> {
+                Intent panelIntent;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    panelIntent = new Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY);
+                } else {
+                    panelIntent = new Intent(Settings.ACTION_WIFI_SETTINGS);
+                }
+                panelIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                try {
+                    startActivity(panelIntent);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            });
+        }
+
         // Firebase से Admin वाली UPI ID उठाकर QR जनरेट करना
         FirebaseFirestore.getInstance().collection("AdminSettings").document("PaymentInfo")
             .get().addOnSuccessListener(documentSnapshot -> {
@@ -53,14 +75,15 @@ public class LockActivity extends Activity {
                 }
             });
 
-                dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
+        dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
         try {
-            if (dpm.isDeviceOwnerApp(getPackageName())) {
+            if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
                 // 1. एडमिन कंपोनेंट बनाएँ
                 android.content.ComponentName myAdmin = new android.content.ComponentName(this, MyAdminReceiver.class);
                 
-                // 2. सिस्टम को बताएं कि इस ऐप को बिना परमिशन पूछे लॉक करने का अधिकार है (Whitelist)
-                dpm.setLockTaskPackages(myAdmin, new String[]{getPackageName()});
+                // 2. सिस्टम को बताएं कि इस ऐप को बिना परमिशन पूछे लॉक करने का अधिकार है
+                // ध्यान दें: यहाँ "com.android.settings" जोड़ा गया है ताकि वाई-फाई पैनल लॉक स्क्रीन के ऊपर भी खुल सके
+                dpm.setLockTaskPackages(myAdmin, new String[]{getPackageName(), "com.android.settings"});
                 
                 // 3. फ़ोन को Settings से फ़ैक्टरी रिसेट होने से भी ब्लॉक करें
                 dpm.addUserRestriction(myAdmin, android.os.UserManager.DISALLOW_FACTORY_RESET);
@@ -72,7 +95,12 @@ public class LockActivity extends Activity {
             e.printStackTrace();
         }
         
-        SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
+        // नया लॉजिक: Device Protected Storage का इस्तेमाल ताकि रीबूट होने पर बिना पिन के भी session_id मिल सके
+        Context deviceContext = this;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            deviceContext = createDeviceProtectedStorageContext();
+        }
+        SharedPreferences prefs = deviceContext.getSharedPreferences("AppPrefs", MODE_PRIVATE);
         String sessionId = prefs.getString("session_id", null);
 
         if (sessionId != null) {
@@ -120,7 +148,7 @@ public class LockActivity extends Activity {
 
     private void unlockAndClose() {
         try {
-            if (dpm.isDeviceOwnerApp(getPackageName())) {
+            if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
                 stopLockTask();
             }
         } catch (Exception e) {}
