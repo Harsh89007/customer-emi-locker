@@ -403,12 +403,34 @@ public class LockListenerService extends Service {
         }
     }
 
-    private void showUnbreakableLock() {
+        private void showUnbreakableLock() {
         if (isOverlayShowing || windowManager == null) return;
 
         try {
             LayoutInflater inflater = (LayoutInflater) getSystemService(LAYOUT_INFLATER_SERVICE);
             lockViewOverlay = inflater.inflate(R.layout.activity_lock, null);
+
+            // =======================================================
+            // नया कोड: वाई-फाई बटन का लॉजिक (यहाँ सेट करना है)
+            // =======================================================
+            android.widget.Button btnConnectWifi = lockViewOverlay.findViewById(R.id.btn_connect_wifi);
+            if (btnConnectWifi != null) {
+                btnConnectWifi.setOnClickListener(v -> {
+                    android.content.Intent panelIntent;
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                        panelIntent = new android.content.Intent(android.provider.Settings.Panel.ACTION_INTERNET_CONNECTIVITY);
+                    } else {
+                        panelIntent = new android.content.Intent(android.provider.Settings.ACTION_WIFI_SETTINGS);
+                    }
+                    panelIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                    try {
+                        startActivity(panelIntent);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                });
+            }
+            // =======================================================
 
             ImageView qrCodeImage = lockViewOverlay.findViewById(R.id.qr_code_image);
             FirebaseFirestore.getInstance().collection("AdminSettings").document("PaymentInfo")
@@ -421,7 +443,7 @@ public class LockListenerService extends Service {
                                 MultiFormatWriter writer = new MultiFormatWriter();
                                 BitMatrix matrix = writer.encode(upiUrl, BarcodeFormat.QR_CODE, 400, 400);
                                 BarcodeEncoder encoder = new BarcodeEncoder();
-                                Bitmap bitmap = encoder.createBitmap(matrix);
+                                android.graphics.Bitmap bitmap = encoder.createBitmap(matrix);
                                 qrCodeImage.setImageBitmap(bitmap);
                             } catch (Exception e) {
                                 e.printStackTrace();
@@ -429,7 +451,7 @@ public class LockListenerService extends Service {
                         }
                     }
                 });
-
+            
             int layoutType = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ?
                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
                     WindowManager.LayoutParams.TYPE_PHONE;
