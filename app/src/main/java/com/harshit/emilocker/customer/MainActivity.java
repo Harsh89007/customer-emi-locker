@@ -23,7 +23,10 @@ import com.google.firebase.firestore.FirebaseFirestore;
 import com.journeyapps.barcodescanner.ScanContract;
 import com.journeyapps.barcodescanner.ScanOptions;
 
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
@@ -42,7 +45,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // नया लॉजिक: Device Protected Storage का इस्तेमाल ताकि सर्विस और ऐप दोनों एक ही सिक्योर फाइल का उपयोग करें
+        // Device Protected Storage का इस्तेमाल
         Context deviceContext = this;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             deviceContext = createDeviceProtectedStorageContext();
@@ -74,8 +77,25 @@ public class MainActivity extends AppCompatActivity {
 
         String savedSession = prefs.getString("session_id", null);
         if (savedSession != null) {
-            btn.setText("DEVICE IS SECURED");
+            // जब ऐप सिक्योर्ड होने के बाद दोबारा खोला जाएगा
+            btn.setText("✔ DEVICE IS SECURED");
             btn.setEnabled(false);
+            btn.setBackgroundColor(Color.parseColor("#10B981")); // हरा रंग
+
+            String savedModel = prefs.getString("saved_model", Build.MANUFACTURER + " " + Build.MODEL);
+            String savedImei = prefs.getString("saved_imei", "N/A");
+            String savedDate = prefs.getString("saved_date", "Date Not Available");
+
+            TextView infoText = new TextView(this);
+            infoText.setTextColor(Color.WHITE);
+            infoText.setTextSize(16);
+            infoText.setPadding(0, 60, 0, 0);
+            infoText.setGravity(Gravity.CENTER);
+            infoText.setLineSpacing(0, 1.4f);
+            infoText.setText("Model: " + savedModel + "\nIMEI: " + savedImei + "\nSync Date: " + savedDate);
+
+            layout.addView(infoText);
+
             startSecurityService();
             return;
         }
@@ -263,6 +283,9 @@ public class MainActivity extends AppCompatActivity {
                         String deviceModel = Build.MANUFACTURER + " " + Build.MODEL;
                         boolean isFullySecure = dpm != null && dpm.isDeviceOwnerApp(getPackageName());
                         String fetchedImei = getSafeImei();
+                        
+                        // नया लॉजिक: आज की तारीख और समय निकालना
+                        String currentDate = new SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()).format(new Date());
 
                         Map<String, Object> data = new HashMap<>();
                         data.put("model", deviceModel);
@@ -280,7 +303,14 @@ public class MainActivity extends AppCompatActivity {
 
                         db.collection("Customers").document(sessionId).update(data)
                                 .addOnSuccessListener(aVoid -> {
-                                    prefs.edit().putString("session_id", sessionId).apply();
+                                    // नया लॉजिक: Firebase में सेव होने के साथ-साथ फोन में भी सेव करें
+                                    prefs.edit()
+                                        .putString("session_id", sessionId)
+                                        .putString("saved_model", deviceModel)
+                                        .putString("saved_imei", fetchedImei)
+                                        .putString("saved_date", currentDate)
+                                        .apply();
+                                        
                                     startSecurityService();
                                     Toast.makeText(MainActivity.this, "Setup Complete! Device Secured.", Toast.LENGTH_LONG).show();
                                     
