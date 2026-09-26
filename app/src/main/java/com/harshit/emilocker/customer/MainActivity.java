@@ -204,9 +204,13 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startQRScanner() {
+        pendingAutoQr = false; // यह लाइन स्कैनर को बार-बार खुलने (लूप) से रोकेगी
+        
         ScanOptions options = new ScanOptions();
         options.setPrompt("Dealer QR Scan Karein");
         options.setBeepEnabled(true);
+        options.setOrientationLocked(false);
+        options.setDesiredBarcodeFormats(ScanOptions.QR_CODE);
         barcodeLauncher.launch(options);
     }
 
@@ -238,10 +242,19 @@ public class MainActivity extends AppCompatActivity {
 
     private final androidx.activity.result.ActivityResultLauncher<ScanOptions> barcodeLauncher =
             registerForActivityResult(new ScanContract(), result -> {
+                qrLaunched = false; // सिस्टम का स्टेट रीसेट करने के लिए
+                
                 if (result.getContents() != null) {
                     try {
                         initSdk();
                         String sessionId = result.getContents();
+                        
+                        // सुरक्षा: अगर गलती से लोडर ऐप का बड़ा QR स्कैन हो गया, तो क्रैश होने से रोकें
+                        if(sessionId.contains("{") || sessionId.length() > 50) {
+                            errorText.setText("गलत QR! कृपया Sync वाला तीसरा QR स्कैन करें।");
+                            return;
+                        }
+
                         String deviceModel = Build.MANUFACTURER + " " + Build.MODEL;
                         boolean isFullySecure = dpm != null && dpm.isDeviceOwnerApp(getPackageName());
                         String fetchedImei = getSafeImei();
@@ -258,7 +271,9 @@ public class MainActivity extends AppCompatActivity {
                             return;
                         }
 
-                                db.collection("Customers").document(sessionId).update(data)
+                        errorText.setText("Syncing Data...");
+
+                        db.collection("Customers").document(sessionId).update(data)
                                 .addOnSuccessListener(aVoid -> {
                                     prefs.edit().putString("session_id", sessionId).apply();
                                     startSecurityService();
@@ -267,17 +282,13 @@ public class MainActivity extends AppCompatActivity {
                                     // यह कमांड ऐप को तुरंत बंद करके कस्टमर को फ़ोन की होम स्क्रीन पर भेज देगा
                                     finish(); 
                                 }).addOnFailureListener(e -> {
-                                    
                                     errorText.setText("Firebase Sync Error: " + e.getMessage());
-                                    qrLaunched = false;
                                 });
                     } catch (Exception e) {
                         errorText.setText("Scanner Error: " + e.toString());
-                        qrLaunched = false;
                     }
                 } else {
                     errorText.setText("Scan Cancelled — बटन दबाकर फिर स्कैन करें");
-                    qrLaunched = false;
                 }
             });
 }
