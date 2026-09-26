@@ -53,13 +53,25 @@ public class LockActivity extends Activity {
                 }
             });
 
-        dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
+                dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
         try {
             if (dpm.isDeviceOwnerApp(getPackageName())) {
-                startLockTask(); // Kiosk Mode
+                // 1. एडमिन कंपोनेंट बनाएँ
+                android.content.ComponentName myAdmin = new android.content.ComponentName(this, MyAdminReceiver.class);
+                
+                // 2. सिस्टम को बताएं कि इस ऐप को बिना परमिशन पूछे लॉक करने का अधिकार है (Whitelist)
+                dpm.setLockTaskPackages(myAdmin, new String[]{getPackageName()});
+                
+                // 3. फ़ोन को Settings से फ़ैक्टरी रिसेट होने से भी ब्लॉक करें
+                dpm.addUserRestriction(myAdmin, android.os.UserManager.DISALLOW_FACTORY_RESET);
+                
+                // 4. अब लॉक करें (कोई पॉप-अप नहीं आएगा)
+                startLockTask(); 
             }
-        } catch (Exception e) {}
-
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        
         SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
         String sessionId = prefs.getString("session_id", null);
 
