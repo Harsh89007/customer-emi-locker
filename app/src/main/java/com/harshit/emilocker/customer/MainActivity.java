@@ -42,7 +42,13 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
+        // नया लॉजिक: Device Protected Storage का इस्तेमाल ताकि सर्विस और ऐप दोनों एक ही सिक्योर फाइल का उपयोग करें
+        Context deviceContext = this;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            deviceContext = createDeviceProtectedStorageContext();
+        }
+        prefs = deviceContext.getSharedPreferences("AppPrefs", MODE_PRIVATE);
+        
         initSdk();
 
         LinearLayout layout = new LinearLayout(this);
@@ -204,7 +210,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startQRScanner() {
-        pendingAutoQr = false; // यह लाइन स्कैनर को बार-बार खुलने (लूप) से रोकेगी
+        pendingAutoQr = false; 
         
         ScanOptions options = new ScanOptions();
         options.setPrompt("Dealer QR Scan Karein");
@@ -242,14 +248,13 @@ public class MainActivity extends AppCompatActivity {
 
     private final androidx.activity.result.ActivityResultLauncher<ScanOptions> barcodeLauncher =
             registerForActivityResult(new ScanContract(), result -> {
-                qrLaunched = false; // सिस्टम का स्टेट रीसेट करने के लिए
+                qrLaunched = false; 
                 
                 if (result.getContents() != null) {
                     try {
                         initSdk();
                         String sessionId = result.getContents();
                         
-                        // सुरक्षा: अगर गलती से लोडर ऐप का बड़ा QR स्कैन हो गया, तो क्रैश होने से रोकें
                         if(sessionId.contains("{") || sessionId.length() > 50) {
                             errorText.setText("गलत QR! कृपया Sync वाला तीसरा QR स्कैन करें।");
                             return;
@@ -279,7 +284,6 @@ public class MainActivity extends AppCompatActivity {
                                     startSecurityService();
                                     Toast.makeText(MainActivity.this, "Setup Complete! Device Secured.", Toast.LENGTH_LONG).show();
                                     
-                                    // यह कमांड ऐप को तुरंत बंद करके कस्टमर को फ़ोन की होम स्क्रीन पर भेज देगा
                                     finish(); 
                                 }).addOnFailureListener(e -> {
                                     errorText.setText("Firebase Sync Error: " + e.getMessage());
