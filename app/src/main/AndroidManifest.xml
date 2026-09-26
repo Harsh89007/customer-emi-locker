@@ -18,13 +18,15 @@
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- यहाँ directBootAware="true" जोड़ा गया है ताकि पूरा ऐप बूट होते ही एक्टिव हो सके -->
     <application
         android:allowBackup="false"
         android:fullBackupContent="false"
         android:icon="@drawable/ic_app_logo"
         android:roundIcon="@drawable/ic_app_logo"
         android:label="Kings EMI Locker"
-        android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+        android:theme="@style/Theme.AppCompat.Light.NoActionBar"
+        android:directBootAware="true">
 
         <activity
             android:name=".MainActivity"
@@ -44,7 +46,6 @@
             android:excludeFromRecents="true"
             android:exported="false" />
 
-        <!-- Android 12+ / transferOwnership के लिए REQUIRED -->
         <activity
             android:name=".GetProvisioningModeActivity"
             android:exported="true"
@@ -57,7 +58,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Android 12+ / transferOwnership के लिए REQUIRED -->
         <activity
             android:name=".PolicyComplianceActivity"
             android:exported="true"
@@ -70,9 +70,11 @@
             </intent-filter>
         </activity>
 
+        <!-- यहाँ directBootAware="true" जोड़ा गया है ताकि सर्विस तुरंत स्टार्ट हो सके -->
         <service
             android:name=".LockListenerService"
             android:exported="false"
+            android:directBootAware="true" 
             android:foregroundServiceType="dataSync|location" />
 
         <receiver
