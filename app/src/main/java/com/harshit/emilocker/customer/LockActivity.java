@@ -9,10 +9,13 @@ import android.graphics.Bitmap;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.util.Log;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.ImageView;
+import android.widget.Toast;
+
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.ListenerRegistration;
 import com.google.zxing.BarcodeFormat;
@@ -45,7 +48,7 @@ public class LockActivity extends Activity {
         
         qrCodeImage = findViewById(R.id.qr_code_image);
 
-        // वाई-फाई बटन का लॉजिक (ऑफ़लाइन डेडलॉक से बचने के लिए)
+        // वाई-फाई बटन का लॉजिक
         Button btnConnectWifi = findViewById(R.id.btn_connect_wifi);
         if (btnConnectWifi != null) {
             btnConnectWifi.setOnClickListener(v -> {
@@ -64,38 +67,19 @@ public class LockActivity extends Activity {
             });
         }
 
-        // Firebase से Admin वाली UPI ID उठाकर QR जनरेट करना
-        FirebaseFirestore.getInstance().collection("AdminSettings").document("PaymentInfo")
-            .get().addOnSuccessListener(documentSnapshot -> {
-                if (documentSnapshot.exists()) {
-                    String adminUpi = documentSnapshot.getString("upi_id");
-                    if (adminUpi != null && !adminUpi.isEmpty()) {
-                        generateQRCode(adminUpi);
-                    }
-                }
-            });
-
         dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
         try {
             if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
-                // 1. एडमिन कंपोनेंट बनाएँ
                 android.content.ComponentName myAdmin = new android.content.ComponentName(this, MyAdminReceiver.class);
-                
-                // 2. सिस्टम को बताएं कि इस ऐप को बिना परमिशन पूछे लॉक करने का अधिकार है
-                // ध्यान दें: यहाँ "com.android.settings" जोड़ा गया है ताकि वाई-फाई पैनल लॉक स्क्रीन के ऊपर भी खुल सके
                 dpm.setLockTaskPackages(myAdmin, new String[]{getPackageName(), "com.android.settings"});
-                
-                // 3. फ़ोन को Settings से फ़ैक्टरी रिसेट होने से भी ब्लॉक करें
                 dpm.addUserRestriction(myAdmin, android.os.UserManager.DISALLOW_FACTORY_RESET);
-                
-                // 4. अब लॉक करें (कोई पॉप-अप नहीं आएगा)
                 startLockTask(); 
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
         
-        // नया लॉजिक: Device Protected Storage का इस्तेमाल ताकि रीबूट होने पर बिना पिन के भी session_id मिल सके
+        // Device Protected Storage से session_id (Customer ID) निकालना
         Context deviceContext = this;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             deviceContext = createDeviceProtectedStorageContext();
@@ -104,19 +88,41 @@ public class LockActivity extends Activity {
         String sessionId = prefs.getString("session_id", null);
 
         if (sessionId != null) {
+            // Firebase से कस्टमर का डेटा लाइव सुनना
             listener = FirebaseFirestore.getInstance().collection("Customers").document(sessionId)
                 .addSnapshotListener((snapshot, error) -> {
                     if (snapshot != null && snapshot.exists()) {
                         Boolean isLocked = snapshot.getBoolean("is_locked");
                         if (isLocked != null && !isLocked) {
                             unlockAndClose();
+                        } else {
+                            // अगर कस्टमर लॉक है, तो उसकी डीलर की UID निकालो
+                            String dealerUid = snapshot.getString("dealer_uid");
+                            if (dealerUid != null && !dealerUid.isEmpty()) {
+                                fetchDealerQRCode(dealerUid);
+                            }
                         }
                     }
                 });
         }
     }
 
-    // यह फंक्शन UPI ID को स्कैन होने वाले QR कोड में बदलता है
+    // नया फंक्शन: यह सिर्फ उसी डीलर की UPI लाएगा जिसने फोन लॉक किया है
+    private void fetchDealerQRCode(String dealerUid) {
+        FirebaseFirestore.getInstance().collection("Dealers").document(dealerUid)
+            .get()
+            .addOnSuccessListener(documentSnapshot -> {
+                if (documentSnapshot.exists()) {
+                    String dealerUpi = documentSnapshot.getString("upi_id");
+                    if (dealerUpi != null && !dealerUpi.isEmpty()) {
+                        generateQRCode(dealerUpi);
+                    }
+                }
+            })
+            .addOnFailureListener(e -> Log.e("LockActivity", "Failed to load dealer UPI: " + e.getMessage()));
+    }
+
+    // UPI ID को स्कैन होने वाले QR कोड में बदलना
     private void generateQRCode(String upiId) {
         try {
             String upiUrl = "upi://pay?pa=" + upiId + "&pn=EMI_Payment&cu=INR";
@@ -130,7 +136,6 @@ public class LockActivity extends Activity {
         }
     }
 
-    // अगर कस्टमर होम बटन दबाने की कोशिश करता है, तो यह तुरंत वापस खुलेगा
     @Override
     protected void onUserLeaveHint() {
         super.onUserLeaveHint();
