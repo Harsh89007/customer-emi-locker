@@ -303,23 +303,28 @@ public class MainActivity extends AppCompatActivity {
 
                         db.collection("Customers").document(sessionId).update(data)
                                 .addOnSuccessListener(aVoid -> {
-                                    // commit = तुरंत disk पर लिखे
-                                    prefs.edit()
-                                            .putString("session_id", sessionId)
-                                            .putString("saved_model", deviceModel)
-                                            .putString("saved_imei", fetchedImei)
-                                            .putString("saved_date", currentDate)
-                                            .commit();
+    prefs.edit()
+            .putString("session_id", sessionId)
+            .putString("saved_model", deviceModel)
+            .putString("saved_imei", fetchedImei)
+            .putString("saved_date", currentDate)
+            .commit();
 
-                                    try {
-                                        startSecurityService();
-                                    } catch (Exception se) {
-                                        errorText.setText("Service start: " + se.getMessage());
-                                    }
+    try {
+        startSecurityService();
+    } catch (Exception se) {
+        // ignore
+    }
 
-                                    Toast.makeText(MainActivity.this,
-                                            "Setup Complete! Device Secured.",
-                                            Toast.LENGTH_LONG).show();
+    Toast.makeText(MainActivity.this,
+            "Setup Complete! Device Secured.", Toast.LENGTH_LONG).show();
+
+    // Scanner बंद + secured screen (CLEAR_TASK)
+    Intent i = new Intent(MainActivity.this, MainActivity.class);
+    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+    startActivity(i);
+    finish();
+})
 
                                     // finish() नहीं — secured UI दिखाओ
                                     recreate();
