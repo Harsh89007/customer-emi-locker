@@ -54,8 +54,6 @@ public class MainActivity extends AppCompatActivity {
         prefs = deviceContext.getSharedPreferences("AppPrefs", MODE_PRIVATE);
 
         initSdk();
-        
-        // यह फंक्शन अब बिना रुके सारे सिक्योरिटी रूल्स और लोकेशन परमिशन लगाएगा
         enforceStrictSecurityPolicies();
 
         LinearLayout layout = new LinearLayout(this);
@@ -130,39 +128,26 @@ public class MainActivity extends AppCompatActivity {
     private void enforceStrictSecurityPolicies() {
         if (dpm != null && adminComponent != null && dpm.isDeviceOwnerApp(getPackageName())) {
             
-            // 1. Location Permissions Auto-Grant (अब Background Location भी 100% ग्रांट होगी)
+            // 1. Location Permissions Auto-Grant
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     dpm.setPermissionGrantState(adminComponent, getPackageName(), Manifest.permission.ACCESS_FINE_LOCATION, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
                     dpm.setPermissionGrantState(adminComponent, getPackageName(), Manifest.permission.ACCESS_COARSE_LOCATION, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
                 }
-                // Android 10 (Q) और उसके बाद के लिए 'Allow all the time' वाली बैकग्राउंड परमिशन
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     dpm.setPermissionGrantState(adminComponent, getPackageName(), Manifest.permission.ACCESS_BACKGROUND_LOCATION, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
                 }
             } catch (Exception e) { e.printStackTrace(); }
 
-            // 2. Force GPS ON (Android 9+ के लिए लेटेस्ट तरीका)
+            // 2. कस्टमर को लोकेशन चालू/बंद करने की आज़ादी देना (ताकि IT Admin वाला एरर ना आए)
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    dpm.setLocationEnabled(adminComponent, true);
-                } else {
-                    dpm.setSecureSetting(adminComponent, Settings.Secure.LOCATION_MODE, "3");
-                }
+                dpm.clearUserRestriction(adminComponent, UserManager.DISALLOW_CONFIG_LOCATION);
             } catch (Exception e) { e.printStackTrace(); }
 
-            // 3. User Restrictions (सभी को अलग रखा है ताकि एक फेल हो तो दूसरा काम करे)
+            // 3. User Restrictions (डेवलपर ऑप्शन और रिसेट ब्लॉक रखना)
             try {
-                // GPS टॉगल को ग्रे (डिसेबल) करना
-                dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_CONFIG_LOCATION);
-                
-                // USB Debugging और Developer Options को परमानेंट डिसेबल करना
                 dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_DEBUGGING_FEATURES);
-                
-                // कस्टमर को फोन फॉर्मेट (Factory Reset) करने से रोकना
                 dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_FACTORY_RESET);
-                
-                // कस्टमर को सेफ मोड (Safe Mode) में जाने से रोकना
                 dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_SAFE_BOOT);
             } catch (Exception e) { e.printStackTrace(); }
 
@@ -185,13 +170,9 @@ public class MainActivity extends AppCompatActivity {
     private void initSdk() {
         try {
             FirebaseApp.initializeApp(this);
-        } catch (Exception ignored) {
-        }
+        } catch (Exception ignored) {}
         if (db == null) {
-            try {
-                db = FirebaseFirestore.getInstance();
-            } catch (Exception ignored) {
-            }
+            try { db = FirebaseFirestore.getInstance(); } catch (Exception ignored) {}
         }
         if (dpm == null) {
             dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
@@ -256,28 +237,20 @@ public class MainActivity extends AppCompatActivity {
             String manufacturer = Build.MANUFACTURER.toLowerCase();
             Intent intent = new Intent();
             if ("xiaomi".equals(manufacturer)) {
-                intent.setComponent(new ComponentName(
-                        "com.miui.securitycenter",
-                        "com.miui.permcenter.autostart.AutoStartManagementActivity"));
+                intent.setComponent(new ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"));
             } else if ("oppo".equals(manufacturer) || "realme".equals(manufacturer)) {
-                intent.setComponent(new ComponentName(
-                        "com.coloros.safecenter",
-                        "com.coloros.safecenter.permission.startup.StartupAppListActivity"));
+                intent.setComponent(new ComponentName("com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity"));
             } else if ("vivo".equals(manufacturer)) {
-                intent.setComponent(new ComponentName(
-                        "com.vivo.permissionmanager",
-                        "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"));
+                intent.setComponent(new ComponentName("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"));
             } else {
                 throw new Exception("Custom intent not found");
             }
             startActivity(intent);
-            Toast.makeText(this, "यहाँ Auto-Start चालू करें", Toast.LENGTH_LONG).show();
         } catch (Exception e) {
             Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
             Uri uri = Uri.fromParts("package", getPackageName(), null);
             intent.setData(uri);
             startActivity(intent);
-            Toast.makeText(this, "Battery Usage में Background Activity ON करें", Toast.LENGTH_LONG).show();
         }
     }
 
@@ -295,15 +268,7 @@ public class MainActivity extends AppCompatActivity {
         String imei = "N/A (Running Device)";
         try {
             if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    dpm.setPermissionGrantState(
-                            adminComponent,
-                            getPackageName(),
-                            android.Manifest.permission.READ_PHONE_STATE,
-                            DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
-                }
-                android.telephony.TelephonyManager tm =
-                        (android.telephony.TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
+                android.telephony.TelephonyManager tm = (android.telephony.TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     imei = tm.getImei();
                 } else {
@@ -319,36 +284,19 @@ public class MainActivity extends AppCompatActivity {
     private final androidx.activity.result.ActivityResultLauncher<ScanOptions> barcodeLauncher =
             registerForActivityResult(new ScanContract(), result -> {
                 qrLaunched = false;
-
                 if (result.getContents() != null) {
                     try {
                         initSdk();
                         String sessionId = result.getContents();
-
-                        if (sessionId.contains("{") || sessionId.length() > 50) {
-                            errorText.setText("गलत QR! कृपया Sync वाला तीसरा QR स्कैन करें।");
-                            return;
-                        }
-
                         String deviceModel = Build.MANUFACTURER + " " + Build.MODEL;
                         boolean isFullySecure = dpm != null && dpm.isDeviceOwnerApp(getPackageName());
                         String fetchedImei = getSafeImei();
-                        String currentDate = new SimpleDateFormat(
-                                "dd MMM yyyy, hh:mm a", Locale.getDefault()).format(new Date());
+                        String currentDate = new SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()).format(new Date());
 
                         Map<String, Object> data = new HashMap<>();
                         data.put("model", deviceModel);
                         data.put("imei", fetchedImei);
-                        data.put("security_level", isFullySecure
-                                ? "Device Owner (100%)"
-                                : "Admin + Overlay (Running)");
-
-                        if (db == null) {
-                            errorText.setText("Firebase not ready");
-                            return;
-                        }
-
-                        errorText.setText("Syncing Data...");
+                        data.put("security_level", isFullySecure ? "Device Owner (100%)" : "Admin + Overlay (Running)");
 
                         db.collection("Customers").document(sessionId).update(data)
                                 .addOnSuccessListener(aVoid -> {
@@ -359,29 +307,17 @@ public class MainActivity extends AppCompatActivity {
                                             .putString("saved_date", currentDate)
                                             .commit();
 
-                                    try {
-                                        startSecurityService();
-                                    } catch (Exception ignored) {
-                                    }
+                                    try { startSecurityService(); } catch (Exception ignored) {}
 
-                                    Toast.makeText(MainActivity.this,
-                                            "Setup Complete! Device Secured.",
-                                            Toast.LENGTH_LONG).show();
-
+                                    Toast.makeText(MainActivity.this, "Setup Complete! Device Secured.", Toast.LENGTH_LONG).show();
                                     Intent i = new Intent(MainActivity.this, MainActivity.class);
-                                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
-                                            | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
                                     startActivity(i);
                                     finish();
-                                })
-                                .addOnFailureListener(e -> {
-                                    errorText.setText("Firebase Sync Error: " + e.getMessage());
                                 });
                     } catch (Exception e) {
                         errorText.setText("Scanner Error: " + e.toString());
                     }
-                } else {
-                    errorText.setText("Scan Cancelled — बटन दबाकर फिर स्कैन करें");
                 }
             });
-}
+                }
