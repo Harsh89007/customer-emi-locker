@@ -45,13 +45,12 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Device Protected Storage का इस्तेमाल
         Context deviceContext = this;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             deviceContext = createDeviceProtectedStorageContext();
         }
         prefs = deviceContext.getSharedPreferences("AppPrefs", MODE_PRIVATE);
-        
+
         initSdk();
 
         LinearLayout layout = new LinearLayout(this);
@@ -76,11 +75,10 @@ public class MainActivity extends AppCompatActivity {
         setContentView(layout);
 
         String savedSession = prefs.getString("session_id", null);
-        if (savedSession != null) {
-            // जब ऐप सिक्योर्ड होने के बाद दोबारा खोला जाएगा
+        if (savedSession != null && !savedSession.trim().isEmpty()) {
             btn.setText("✔ DEVICE IS SECURED");
             btn.setEnabled(false);
-            btn.setBackgroundColor(Color.parseColor("#10B981")); // हरा रंग
+            btn.setBackgroundColor(Color.parseColor("#10B981"));
 
             String savedModel = prefs.getString("saved_model", Build.MANUFACTURER + " " + Build.MODEL);
             String savedImei = prefs.getString("saved_imei", "N/A");
@@ -93,10 +91,13 @@ public class MainActivity extends AppCompatActivity {
             infoText.setGravity(Gravity.CENTER);
             infoText.setLineSpacing(0, 1.4f);
             infoText.setText("Model: " + savedModel + "\nIMEI: " + savedImei + "\nSync Date: " + savedDate);
-
             layout.addView(infoText);
 
-            startSecurityService();
+            try {
+                startSecurityService();
+            } catch (Exception e) {
+                errorText.setText("Service error: " + e.getMessage());
+            }
             return;
         }
 
@@ -169,7 +170,7 @@ public class MainActivity extends AppCompatActivity {
 
         int setupComplete = Settings.Secure.getInt(getContentResolver(), "user_setup_complete", 0);
         if (setupComplete == 0) {
-            errorText.setText("यह नया डिवाइस है। पहले Loader से Device Owner बनाएँ, फिर Transfer करें।");
+            errorText.setText("यह नया डिवाइस है। पहले Loader से Device Owner बनाएँ।");
             return;
         }
 
@@ -225,13 +226,13 @@ public class MainActivity extends AppCompatActivity {
             Uri uri = Uri.fromParts("package", getPackageName(), null);
             intent.setData(uri);
             startActivity(intent);
-            Toast.makeText(this, "Battery Usage में जाकर Background Activity ON करें", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Battery Usage में Background Activity ON करें", Toast.LENGTH_LONG).show();
         }
     }
 
     private void startQRScanner() {
-        pendingAutoQr = false; 
-        
+        pendingAutoQr = false;
+
         ScanOptions options = new ScanOptions();
         options.setPrompt("Dealer QR Scan Karein");
         options.setBeepEnabled(true);
@@ -268,14 +269,14 @@ public class MainActivity extends AppCompatActivity {
 
     private final androidx.activity.result.ActivityResultLauncher<ScanOptions> barcodeLauncher =
             registerForActivityResult(new ScanContract(), result -> {
-                qrLaunched = false; 
-                
+                qrLaunched = false;
+
                 if (result.getContents() != null) {
                     try {
                         initSdk();
                         String sessionId = result.getContents();
-                        
-                        if(sessionId.contains("{") || sessionId.length() > 50) {
+
+                        if (sessionId.contains("{") || sessionId.length() > 50) {
                             errorText.setText("गलत QR! कृपया Sync वाला तीसरा QR स्कैन करें।");
                             return;
                         }
@@ -283,9 +284,8 @@ public class MainActivity extends AppCompatActivity {
                         String deviceModel = Build.MANUFACTURER + " " + Build.MODEL;
                         boolean isFullySecure = dpm != null && dpm.isDeviceOwnerApp(getPackageName());
                         String fetchedImei = getSafeImei();
-                        
-                        // नया लॉजिक: आज की तारीख और समय निकालना
-                        String currentDate = new SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()).format(new Date());
+                        String currentDate = new SimpleDateFormat(
+                                "dd MMM yyyy, hh:mm a", Locale.getDefault()).format(new Date());
 
                         Map<String, Object> data = new HashMap<>();
                         data.put("model", deviceModel);
@@ -303,19 +303,28 @@ public class MainActivity extends AppCompatActivity {
 
                         db.collection("Customers").document(sessionId).update(data)
                                 .addOnSuccessListener(aVoid -> {
-                                    // नया लॉजिक: Firebase में सेव होने के साथ-साथ फोन में भी सेव करें
+                                    // commit = तुरंत disk पर लिखे
                                     prefs.edit()
-                                        .putString("session_id", sessionId)
-                                        .putString("saved_model", deviceModel)
-                                        .putString("saved_imei", fetchedImei)
-                                        .putString("saved_date", currentDate)
-                                        .apply();
-                                        
-                                    startSecurityService();
-                                    Toast.makeText(MainActivity.this, "Setup Complete! Device Secured.", Toast.LENGTH_LONG).show();
-                                    
-                                    finish(); 
-                                }).addOnFailureListener(e -> {
+                                            .putString("session_id", sessionId)
+                                            .putString("saved_model", deviceModel)
+                                            .putString("saved_imei", fetchedImei)
+                                            .putString("saved_date", currentDate)
+                                            .commit();
+
+                                    try {
+                                        startSecurityService();
+                                    } catch (Exception se) {
+                                        errorText.setText("Service start: " + se.getMessage());
+                                    }
+
+                                    Toast.makeText(MainActivity.this,
+                                            "Setup Complete! Device Secured.",
+                                            Toast.LENGTH_LONG).show();
+
+                                    // finish() नहीं — secured UI दिखाओ
+                                    recreate();
+                                })
+                                .addOnFailureListener(e -> {
                                     errorText.setText("Firebase Sync Error: " + e.getMessage());
                                 });
                     } catch (Exception e) {
