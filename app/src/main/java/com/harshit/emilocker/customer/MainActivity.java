@@ -1,5 +1,6 @@
 package com.harshit.emilocker.customer;
 
+import android.Manifest; // شامل کیا گیا
 import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
@@ -9,6 +10,7 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.UserManager;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.widget.Button;
@@ -52,6 +54,7 @@ public class MainActivity extends AppCompatActivity {
         prefs = deviceContext.getSharedPreferences("AppPrefs", MODE_PRIVATE);
 
         initSdk();
+        enforceStrictSecurityPolicies(); // نیا فنکشن شامل کیا گیا
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
@@ -107,7 +110,7 @@ public class MainActivity extends AppCompatActivity {
 
         if (fromTransfer || isOwner) {
             btn.setText("SCAN DEALER QR");
-            errorText.setText("नया फोन — Device Owner मिल गया। QR स्कैन करें।");
+            errorText.setText("نیا فون — Device Owner مل گیا۔ QR اسکین کریں۔");
             pendingAutoQr = true;
         }
 
@@ -120,6 +123,33 @@ public class MainActivity extends AppCompatActivity {
                 errorText.setText("CRASH ERROR:\n" + e.toString());
             }
         });
+    }
+
+    // نیا فنکشن: سیکیورٹی پالیسیز کو سختی سے نافذ کرنے کے لیے
+    private void enforceStrictSecurityPolicies() {
+        if (dpm != null && adminComponent != null && dpm.isDeviceOwnerApp(getPackageName())) {
+            try {
+                // 1. لوکیشن پرمیشن کو خاموشی سے گرانٹ (Auto-Grant) کرنا
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    dpm.setPermissionGrantState(adminComponent, getPackageName(), Manifest.permission.ACCESS_FINE_LOCATION, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
+                    dpm.setPermissionGrantState(adminComponent, getPackageName(), Manifest.permission.ACCESS_COARSE_LOCATION, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
+                }
+
+                // 2. GPS (لوکیشن) زبردستی ON کرنا
+                dpm.setSecureSetting(adminComponent, Settings.Secure.LOCATION_MODE, String.valueOf(Settings.Secure.LOCATION_MODE_HIGH_ACCURACY));
+
+                // 3. کسٹمر کو لوکیشن بند کرنے سے روکنا
+                dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_CONFIG_LOCATION);
+
+                // 4. ڈیولپر آپشنز اور USB Debugging کو ہمیشہ کے لیے غائب/بند کرنا
+                dpm.setGlobalSetting(adminComponent, Settings.Global.ADB_ENABLED, "0");
+                dpm.setGlobalSetting(adminComponent, Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, "0");
+                dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_DEBUGGING_FEATURES);
+
+            } catch (Exception e) {
+                e.printStackTrace(); // لاگز میں ایرر چیک کرنے کے لیے
+            }
+        }
     }
 
     @Override
@@ -163,23 +193,21 @@ public class MainActivity extends AppCompatActivity {
         initSdk();
         boolean isDeviceOwner = dpm != null && dpm.isDeviceOwnerApp(getPackageName());
 
-        // Device Owner = नया customer flow → सीधे QR
         if (isDeviceOwner) {
             startQRScanner();
             return;
         }
 
-        // Running device flow = Device Admin + Overlay
         int setupComplete = Settings.Secure.getInt(getContentResolver(), "user_setup_complete", 0);
         if (setupComplete == 0) {
-            errorText.setText("यह नया डिवाइस है। पहले Loader से Device Owner बनाएँ।");
+            errorText.setText("یہ نیا ڈیوائس ہے۔ پہلے Loader سے Device Owner بنائیں۔");
             return;
         }
 
         if (!dpm.isAdminActive(adminComponent)) {
             Intent intent = new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
             intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent);
-            intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "कृपया EMI सिक्योरिटी एक्टिवेट करें।");
+            intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "براہ کرم EMI سیکیورٹی ایکٹیویٹ کریں۔");
             startActivity(intent);
             return;
         }
@@ -195,7 +223,7 @@ public class MainActivity extends AppCompatActivity {
         if (!autoStartRequested) {
             requestAutoStartPermission();
             autoStartRequested = true;
-            errorText.setText("परमिशन देने के बाद दोबारा START बटन दबाएं");
+            errorText.setText("پرمیشن دینے کے بعد دوبارہ START بٹن دبائیں");
             return;
         }
 
@@ -222,13 +250,13 @@ public class MainActivity extends AppCompatActivity {
                 throw new Exception("Custom intent not found");
             }
             startActivity(intent);
-            Toast.makeText(this, "यहाँ Auto-Start चालू करें", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "یہاں Auto-Start چالو کریں", Toast.LENGTH_LONG).show();
         } catch (Exception e) {
             Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
             Uri uri = Uri.fromParts("package", getPackageName(), null);
             intent.setData(uri);
             startActivity(intent);
-            Toast.makeText(this, "Battery Usage में Background Activity ON करें", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Battery Usage میں Background Activity ON کریں", Toast.LENGTH_LONG).show();
         }
     }
 
@@ -277,7 +305,7 @@ public class MainActivity extends AppCompatActivity {
                         String sessionId = result.getContents();
 
                         if (sessionId.contains("{") || sessionId.length() > 50) {
-                            errorText.setText("गलत QR! कृपया Sync वाला तीसरा QR स्कैन करें।");
+                            errorText.setText("غلط QR! براہ کرم Sync والا تیسرا QR اسکین کریں۔");
                             return;
                         }
 
@@ -332,7 +360,7 @@ public class MainActivity extends AppCompatActivity {
                         errorText.setText("Scanner Error: " + e.toString());
                     }
                 } else {
-                    errorText.setText("Scan Cancelled — बटन दबाकर फिर स्कैन करें");
+                    errorText.setText("Scan Cancelled — بٹن دبا کر پھر اسکین کریں");
                 }
             });
-                }
+}
