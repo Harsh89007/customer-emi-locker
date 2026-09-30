@@ -163,11 +163,13 @@ public class MainActivity extends AppCompatActivity {
         initSdk();
         boolean isDeviceOwner = dpm != null && dpm.isDeviceOwnerApp(getPackageName());
 
+        // Device Owner = नया customer flow → सीधे QR
         if (isDeviceOwner) {
             startQRScanner();
             return;
         }
 
+        // Running device flow = Device Admin + Overlay
         int setupComplete = Settings.Secure.getInt(getContentResolver(), "user_setup_complete", 0);
         if (setupComplete == 0) {
             errorText.setText("यह नया डिवाइस है। पहले Loader से Device Owner बनाएँ।");
@@ -232,7 +234,6 @@ public class MainActivity extends AppCompatActivity {
 
     private void startQRScanner() {
         pendingAutoQr = false;
-
         ScanOptions options = new ScanOptions();
         options.setPrompt("Dealer QR Scan Karein");
         options.setBeepEnabled(true);
@@ -252,7 +253,6 @@ public class MainActivity extends AppCompatActivity {
                             android.Manifest.permission.READ_PHONE_STATE,
                             DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
                 }
-
                 android.telephony.TelephonyManager tm =
                         (android.telephony.TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -303,31 +303,27 @@ public class MainActivity extends AppCompatActivity {
 
                         db.collection("Customers").document(sessionId).update(data)
                                 .addOnSuccessListener(aVoid -> {
-    prefs.edit()
-            .putString("session_id", sessionId)
-            .putString("saved_model", deviceModel)
-            .putString("saved_imei", fetchedImei)
-            .putString("saved_date", currentDate)
-            .commit();
+                                    prefs.edit()
+                                            .putString("session_id", sessionId)
+                                            .putString("saved_model", deviceModel)
+                                            .putString("saved_imei", fetchedImei)
+                                            .putString("saved_date", currentDate)
+                                            .commit();
 
-    try {
-        startSecurityService();
-    } catch (Exception se) {
-        // ignore
-    }
+                                    try {
+                                        startSecurityService();
+                                    } catch (Exception ignored) {
+                                    }
 
-    Toast.makeText(MainActivity.this,
-            "Setup Complete! Device Secured.", Toast.LENGTH_LONG).show();
+                                    Toast.makeText(MainActivity.this,
+                                            "Setup Complete! Device Secured.",
+                                            Toast.LENGTH_LONG).show();
 
-    // Scanner बंद + secured screen (CLEAR_TASK)
-    Intent i = new Intent(MainActivity.this, MainActivity.class);
-    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-    startActivity(i);
-    finish();
-})
-
-                                    // finish() नहीं — secured UI दिखाओ
-                                    recreate();
+                                    Intent i = new Intent(MainActivity.this, MainActivity.class);
+                                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                                            | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                                    startActivity(i);
+                                    finish();
                                 })
                                 .addOnFailureListener(e -> {
                                     errorText.setText("Firebase Sync Error: " + e.getMessage());
@@ -339,4 +335,4 @@ public class MainActivity extends AppCompatActivity {
                     errorText.setText("Scan Cancelled — बटन दबाकर फिर स्कैन करें");
                 }
             });
-}
+                }
