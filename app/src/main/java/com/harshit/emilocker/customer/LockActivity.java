@@ -42,8 +42,20 @@ public class LockActivity extends Activity {
         
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON |
                              WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
-                             WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
-
+                            WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
+        
+        if (getIntent() != null && getIntent().getBooleanExtra("force_unlock", false)) {
+    try {
+        DevicePolicyManager dpmLocal =
+                (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
+        if (dpmLocal != null && dpmLocal.isDeviceOwnerApp(getPackageName())) {
+            stopLockTask();
+        }
+    } catch (Exception ignored) {}
+    finish();
+    return;
+        }
+        
         setContentView(R.layout.activity_lock);
         
         qrCodeImage = findViewById(R.id.qr_code_image);
