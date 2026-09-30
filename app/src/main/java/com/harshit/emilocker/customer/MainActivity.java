@@ -6,6 +6,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
@@ -19,6 +20,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.firestore.FirebaseFirestore;
@@ -54,6 +56,8 @@ public class MainActivity extends AppCompatActivity {
         prefs = deviceContext.getSharedPreferences("AppPrefs", MODE_PRIVATE);
 
         initSdk();
+        
+        // सभी सिक्योरिटी रूल्स और परमिशन यहाँ लागू होंगी
         enforceStrictSecurityPolicies();
 
         LinearLayout layout = new LinearLayout(this);
@@ -128,7 +132,7 @@ public class MainActivity extends AppCompatActivity {
     private void enforceStrictSecurityPolicies() {
         if (dpm != null && adminComponent != null && dpm.isDeviceOwnerApp(getPackageName())) {
             
-            // 1. Location Permissions Auto-Grant
+            // 1. Location Permissions Auto-Grant (Fine, Coarse और Background को पूरी तरह एडमिन कंट्रोल में करना)
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     dpm.setPermissionGrantState(adminComponent, getPackageName(), Manifest.permission.ACCESS_FINE_LOCATION, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
@@ -137,30 +141,50 @@ public class MainActivity extends AppCompatActivity {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     dpm.setPermissionGrantState(adminComponent, getPackageName(), Manifest.permission.ACCESS_BACKGROUND_LOCATION, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
                 }
-            } catch (Exception e) { e.printStackTrace(); }
+            } catch (Exception e) { 
+                e.printStackTrace(); 
+            }
 
-            // 2. कस्टमर को लोकेशन चालू/बंद करने की आज़ादी देना (ताकि IT Admin वाला एरर ना आए)
+            // 2. यूजर को लोकेशन की परमिशन खुद बदलने से रोकने के लिए रिस्ट्रिक्शन लगाना
             try {
+                // अगर आप चाहते हैं कि कस्टमर खुद 'Allow all the time' से छेड़छाड़ न कर सके, 
+                // तो यह एडमिन पॉलिसी परमिशन को लॉक रखती है।
                 dpm.clearUserRestriction(adminComponent, UserManager.DISALLOW_CONFIG_LOCATION);
-            } catch (Exception e) { e.printStackTrace(); }
+            } catch (Exception e) { 
+                e.printStackTrace(); 
+            }
 
-            // 3. User Restrictions (डेवलपर ऑप्शन और रिसेट ब्लॉक रखना)
+            // 3. अन्य ज़रूरी सिक्योरिटी रिस्ट्रिक्टशंस (डेवलपर ऑप्शन और रिसेट ब्लॉक)
             try {
                 dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_DEBUGGING_FEATURES);
                 dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_FACTORY_RESET);
                 dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_SAFE_BOOT);
-            } catch (Exception e) { e.printStackTrace(); }
+            } catch (Exception e) { 
+                e.printStackTrace(); 
+            }
 
-            // 4. ADB को सिस्टम से ऑफ करना
+            // 4. ADB को सिस्टम से ऑफ रखना
             try {
                 dpm.setGlobalSetting(adminComponent, Settings.Global.ADB_ENABLED, "0");
-            } catch (Exception e) { e.printStackTrace(); }
+            } catch (Exception e) { 
+                e.printStackTrace(); 
+            }
         }
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        
+        // ऐप चालू होते ही बैकग्राउंड में परमिशन को दोबारा फोर्सफुली पुश करना ताकि सैमसंग UI उसे परमानेंट ले ले
+        if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    dpm.setPermissionGrantState(adminComponent, getPackageName(), Manifest.permission.ACCESS_BACKGROUND_LOCATION, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
+                }
+            } catch (Exception ignored) {}
+        }
+
         if (pendingAutoQr && !qrLaunched && prefs.getString("session_id", null) == null) {
             qrLaunched = true;
             startQRScanner();
