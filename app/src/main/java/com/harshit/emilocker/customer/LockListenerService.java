@@ -428,83 +428,125 @@ public class LockListenerService extends Service {
     }
 
     private void showUnbreakableLock() {
-        if (isOverlayShowing || windowManager == null) return;
+    // 1) Device Owner: तुरंत स्क्रीन लॉक + LockActivity
+    try {
+        if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
+            android.content.ComponentName myAdmin =
+                    new android.content.ComponentName(this, MyAdminReceiver.class);
+            try {
+                dpm.setLockTaskPackages(myAdmin,
+                        new String[]{getPackageName(), "com.android.settings"});
+            } catch (Exception ignored) {}
 
-        try {
-            LayoutInflater inflater = (LayoutInflater) getSystemService(LAYOUT_INFLATER_SERVICE);
-            lockViewOverlay = inflater.inflate(R.layout.activity_lock, null);
+            try {
+                dpm.lockNow(); // स्क्रीन तुरंत लॉक
+            } catch (Exception ignored) {}
 
-            android.widget.Button btnConnectWifi = lockViewOverlay.findViewById(R.id.btn_connect_wifi);
-            if (btnConnectWifi != null) {
-                btnConnectWifi.setOnClickListener(v -> {
-                    Intent panelIntent;
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        panelIntent = new Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY);
-                    } else {
-                        panelIntent = new Intent(Settings.ACTION_WIFI_SETTINGS);
-                    }
-                    panelIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    try {
-                        startActivity(panelIntent);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-                });
+            Intent lockIntent = new Intent(this, LockActivity.class);
+            lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                    | Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    | Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+            // Android 10+ background start bypass
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                lockIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK);
             }
+            startActivity(lockIntent);
+        }
+    } catch (Exception e) {
+        e.printStackTrace();
+    }
 
-            ImageView qrCodeImage = lockViewOverlay.findViewById(R.id.qr_code_image);
-            FirebaseFirestore.getInstance().collection("AdminSettings").document("PaymentInfo")
-                    .get().addOnSuccessListener(documentSnapshot -> {
-                        if (documentSnapshot.exists()) {
-                            String adminUpi = documentSnapshot.getString("upi_id");
-                            if (adminUpi != null && !adminUpi.isEmpty()) {
-                                try {
-                                    String upiUrl = "upi://pay?pa=" + adminUpi + "&pn=EMI_Payment&cu=INR";
-                                    MultiFormatWriter writer = new MultiFormatWriter();
-                                    BitMatrix matrix = writer.encode(upiUrl, BarcodeFormat.QR_CODE, 400, 400);
-                                    BarcodeEncoder encoder = new BarcodeEncoder();
-                                    qrCodeImage.setImageBitmap(encoder.createBitmap(matrix));
-                                } catch (Exception e) {
-                                    e.printStackTrace();
-                                }
+    // 2) Overlay (backup) — पहले से दिख रहा हो तो दोबारा मत लगाओ
+    if (isOverlayShowing || windowManager == null) return;
+
+    try {
+        LayoutInflater inflater = (LayoutInflater) getSystemService(LAYOUT_INFLATER_SERVICE);
+        lockViewOverlay = inflater.inflate(R.layout.activity_lock, null);
+
+        android.widget.Button btnConnectWifi =
+                lockViewOverlay.findViewById(R.id.btn_connect_wifi);
+        if (btnConnectWifi != null) {
+            btnConnectWifi.setOnClickListener(v -> {
+                Intent panelIntent;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    panelIntent = new Intent(
+                            android.provider.Settings.Panel.ACTION_INTERNET_CONNECTIVITY);
+                } else {
+                    panelIntent = new Intent(
+                            android.provider.Settings.ACTION_WIFI_SETTINGS);
+                }
+                panelIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                try {
+                    startActivity(panelIntent);
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                }
+            });
+        }
+
+        ImageView qrCodeImage = lockViewOverlay.findViewById(R.id.qr_code_image);
+        FirebaseFirestore.getInstance().collection("AdminSettings").document("PaymentInfo")
+                .get().addOnSuccessListener(documentSnapshot -> {
+                    if (documentSnapshot.exists()) {
+                        String adminUpi = documentSnapshot.getString("upi_id");
+                        if (adminUpi != null && !adminUpi.isEmpty() && qrCodeImage != null) {
+                            try {
+                                String upiUrl = "upi://pay?pa=" + adminUpi
+                                        + "&pn=EMI_Payment&cu=INR";
+                                MultiFormatWriter writer = new MultiFormatWriter();
+                                BitMatrix matrix = writer.encode(
+                                        upiUrl, BarcodeFormat.QR_CODE, 400, 400);
+                                BarcodeEncoder encoder = new BarcodeEncoder();
+                                qrCodeImage.setImageBitmap(encoder.createBitmap(matrix));
+                            } catch (Exception ex) {
+                                ex.printStackTrace();
                             }
                         }
-                    });
+                    }
+                });
 
-            int layoutType = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-                    ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                    : WindowManager.LayoutParams.TYPE_PHONE;
+        int layoutType = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                : WindowManager.LayoutParams.TYPE_PHONE;
 
-            WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-                    WindowManager.LayoutParams.MATCH_PARENT,
-                    WindowManager.LayoutParams.MATCH_PARENT,
-                    layoutType,
-                    WindowManager.LayoutParams.FLAG_FULLSCREEN
-                            | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                            | WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
-                    PixelFormat.TRANSLUCENT);
+        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                layoutType,
+                WindowManager.LayoutParams.FLAG_FULLSCREEN
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                        | WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                        | WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
+                        | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                        | WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD,
+                PixelFormat.TRANSLUCENT);
 
-            windowManager.addView(lockViewOverlay, params);
-            isOverlayShowing = true;
-
-            if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
-                Intent lockIntent = new Intent(this, LockActivity.class);
-                lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                startActivity(lockIntent);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        windowManager.addView(lockViewOverlay, params);
+        isOverlayShowing = true;
+    } catch (Exception e) {
+        e.printStackTrace();
+    }
     }
 
     private void hideLock() {
-        if (isOverlayShowing && lockViewOverlay != null && windowManager != null) {
-            try {
-                windowManager.removeView(lockViewOverlay);
-            } catch (Exception ignored) {
-            }
-            isOverlayShowing = false;
-        }
+    if (isOverlayShowing && lockViewOverlay != null && windowManager != null) {
+        try {
+            windowManager.removeView(lockViewOverlay);
+        } catch (Exception ignored) {}
+        isOverlayShowing = false;
+        lockViewOverlay = null;
+    }
+
+    // LockActivity बंद करो
+    try {
+        Intent unlock = new Intent(this, LockActivity.class);
+        unlock.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_ACTIVITY_CLEAR_TOP
+                | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        unlock.putExtra("force_unlock", true);
+        startActivity(unlock);
+    } catch (Exception ignored) {}
     }
 
     @Override
