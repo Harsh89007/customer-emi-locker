@@ -7,7 +7,6 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -18,7 +17,6 @@
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- यहाँ directBootAware="true" जोड़ा गया है ताकि पूरा ऐप बूट होते ही एक्टिव हो सके -->
     <application
         android:allowBackup="false"
         android:fullBackupContent="false"
@@ -70,12 +68,12 @@
             </intent-filter>
         </activity>
 
-        <!-- यहाँ directBootAware="true" जोड़ा गया है ताकि सर्विस तुरंत स्टार्ट हो सके -->
+        <!-- सिर्फ dataSync — location type हटाया (crash fix) -->
         <service
             android:name=".LockListenerService"
             android:exported="false"
-            android:directBootAware="true" 
-            android:foregroundServiceType="dataSync|location" />
+            android:directBootAware="true"
+            android:foregroundServiceType="dataSync" />
 
         <receiver
             android:name=".BootReceiver"
