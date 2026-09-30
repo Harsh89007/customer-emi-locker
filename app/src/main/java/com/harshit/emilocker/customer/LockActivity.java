@@ -60,28 +60,22 @@ public class LockActivity extends Activity {
         
         qrCodeImage = findViewById(R.id.qr_code_image);
 
-        // वाई-फाई बटन का नया और पावरफुल लॉजिक
+        // वाई-फाई बटन का 100% सिक्योर लॉजिक (नो रिस्क)
         Button btnConnectWifi = findViewById(R.id.btn_connect_wifi);
         if (btnConnectWifi != null) {
             btnConnectWifi.setOnClickListener(v -> {
                 try {
-                    Intent panelIntent;
+                    // सिर्फ Android 10+ के लिए सुरक्षित पॉपअप पैनल खोलें
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        panelIntent = new Intent(Settings.Panel.ACTION_WIFI); // ज़्यादातर Q+ फोंस पर यह परफेक्ट काम करता है
+                        Intent panelIntent = new Intent(Settings.Panel.ACTION_WIFI);
+                        startActivity(panelIntent);
                     } else {
-                        panelIntent = new Intent(Settings.ACTION_WIFI_SETTINGS);
+                        // पुराने फोंस में रिस्क नहीं लेंगे, सिम डालने को कहेंगे
+                        Toast.makeText(this, "कृपया इंटरनेट के लिए फोन में Data वाली SIM डालें", Toast.LENGTH_LONG).show();
                     }
-                    panelIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    startActivity(panelIntent);
                 } catch (Exception e) {
-                    // अगर Panel API ब्लॉक है (कुछ Samsung/Oppo में), तो सीधा Settings खोलें
-                    try {
-                        Intent fallbackIntent = new Intent(Settings.ACTION_WIFI_SETTINGS);
-                        fallbackIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                        startActivity(fallbackIntent);
-                    } catch (Exception ex) {
-                        Toast.makeText(this, "Wi-Fi पैनल खोलने में समस्या आ रही है", Toast.LENGTH_SHORT).show();
-                    }
+                    // अगर पॉपअप क्रैश होता है, तो पूरी सेटिंग्स नहीं खोलेंगे, सिम डालने को कहेंगे
+                    Toast.makeText(this, "कृपया इंटरनेट के लिए फोन में Data वाली SIM डालें", Toast.LENGTH_LONG).show();
                 }
             });
         }
@@ -90,8 +84,12 @@ public class LockActivity extends Activity {
         try {
             if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
                 android.content.ComponentName myAdmin = new android.content.ComponentName(this, MyAdminReceiver.class);
-                // "com.android.settings" की वजह से वाई-फाई का पैनल लॉक स्क्रीन पर काम करेगा
-                dpm.setLockTaskPackages(myAdmin, new String[]{getPackageName(), "com.android.settings"});
+                
+                // === ULTRA SECURE KIOSK MODE ===
+                // हमने "com.android.settings" यहाँ से हटा दिया है। 
+                // अब कस्टमर किसी भी कीमत पर फोन की सेटिंग्स नहीं खोल पाएगा।
+                dpm.setLockTaskPackages(myAdmin, new String[]{getPackageName()});
+                
                 dpm.addUserRestriction(myAdmin, android.os.UserManager.DISALLOW_FACTORY_RESET);
                 startLockTask(); 
             }
