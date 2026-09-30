@@ -4,6 +4,7 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
+import android.app.WallpaperManager;
 import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
@@ -29,7 +30,6 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.ImageView;
 import android.widget.Toast;
-import android.app.WallpaperManager;
 
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.zxing.BarcodeFormat;
@@ -48,8 +48,7 @@ public class LockListenerService extends Service {
     private ComponentName adminComponent;
     private String mySessionId;
     private SharedPreferences prefs;
-    
-    // ओवरले के लिए वेरिएबल्स
+
     private WindowManager windowManager;
     private View lockViewOverlay;
     private boolean isOverlayShowing = false;
@@ -57,102 +56,135 @@ public class LockListenerService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
-        
-        // 1. VIP नोटिफिकेशन बनाना (ताकि Android इसे कभी Kill न करे)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel("EMI_VIP", "System Service", NotificationManager.IMPORTANCE_HIGH);
-            channel.setShowBadge(false);
-            NotificationManager manager = getSystemService(NotificationManager.class);
-            if (manager != null) manager.createNotificationChannel(channel);
 
-            Notification notification = new Notification.Builder(this, "EMI_VIP")
-                .setContentTitle("System Settings")
-                .setContentText("Service is running normally...")
-                .setSmallIcon(android.R.drawable.ic_secure)
-                .setOngoing(true)
-                .build();
-            startForeground(1001, notification);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                NotificationChannel channel = new NotificationChannel(
+                        "EMI_VIP", "System Service", NotificationManager.IMPORTANCE_LOW);
+                channel.setShowBadge(false);
+                NotificationManager manager = getSystemService(NotificationManager.class);
+                if (manager != null) manager.createNotificationChannel(channel);
+
+                Notification notification = new Notification.Builder(this, "EMI_VIP")
+                        .setContentTitle("System Settings")
+                        .setContentText("Service is running normally...")
+                        .setSmallIcon(android.R.drawable.ic_secure)
+                        .setOngoing(true)
+                        .build();
+                startForeground(1001, notification);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
 
-        // नया लॉजिक: Device Protected Storage का इस्तेमाल ताकि फोन रीबूट होने पर बिना पिन के फाइल पढ़ी जा सके
-        Context deviceContext = this;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            deviceContext = createDeviceProtectedStorageContext();
-            // अगर पुराना डेटा नॉर्मल फाइल में है, तो यह कमांड उसे ऑटोमैटिक सिक्योर फाइल में शिफ्ट कर देगा
-            deviceContext.moveSharedPreferencesFrom(this, "AppPrefs");
-        }
-
-        prefs = deviceContext.getSharedPreferences("AppPrefs", MODE_PRIVATE);
-        mySessionId = prefs.getString("session_id", null);
-        
-        if (mySessionId == null) {
-            stopSelf();
-            return;
-        }
-
-        dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
-        adminComponent = new ComponentName(this, MyAdminReceiver.class);
-        windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
-        
-        // 2. फोन चालू होते ही ऑफलाइन मेमोरी चेक करो (अब यह बिना देरी काम करेगा)
-        boolean wasLocked = prefs.getBoolean("is_offline_locked", false);
-        if (wasLocked) {
-            showUnbreakableLock();
-        }
-        
-        // 3. Firebase से रियल-टाइम अपडेट
-        FirebaseFirestore.getInstance().collection("Customers").document(mySessionId)
-            .addSnapshotListener((snapshot, e) -> {
-                if (e != null) {
-                    return;
+        try {
+            Context deviceContext = this;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                deviceContext = createDeviceProtectedStorageContext();
+                try {
+                    deviceContext.moveSharedPreferencesFrom(this, "AppPrefs");
+                } catch (Exception ignored) {
                 }
-                
-                if (snapshot != null) {
-                    if (snapshot.exists()) {
-                        Boolean isReleased = snapshot.getBoolean("is_released");
-                        if (isReleased != null && isReleased) {
-                            releaseOwnershipAndUninstall();
-                            return;
-                        }
+            }
 
-                        Boolean isLocked = snapshot.getBoolean("is_locked");
-                        if (isLocked != null && isLocked) {
-                            prefs.edit().putBoolean("is_offline_locked", true).apply();
-                            showUnbreakableLock();
-                        } else {
-                            prefs.edit().putBoolean("is_offline_locked", false).apply();
-                            hideLock();
-                        }
+            prefs = deviceContext.getSharedPreferences("AppPrefs", MODE_PRIVATE);
+            mySessionId = prefs.getString("session_id", null);
 
-                        String pendingCommand = snapshot.getString("pending_command");
-                        String commandId = snapshot.getString("command_id");
-                        String lastProcessedId = prefs.getString("last_command_id", "");
+            if (mySessionId == null || mySessionId.trim().isEmpty()) {
+                stopSelf();
+                return;
+            }
 
-                        if (pendingCommand != null 
-                                && !pendingCommand.isEmpty() 
-                                && !"none".equals(pendingCommand)
-                                && commandId != null 
-                                && !commandId.equals(lastProcessedId)) {
-                            
-                            prefs.edit().putString("last_command_id", commandId).apply();
-                            processCommand(pendingCommand, commandId, snapshot);
-                        }
+            dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
+            adminComponent = new ComponentName(this, MyAdminReceiver.class);
+            windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
 
-                    } else {
-                        releaseOwnershipAndUninstall();
-                    }
+            // Device Owner → permissions auto-grant
+            if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())
+                    && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                try {
+                    dpm.setPermissionGrantState(adminComponent, getPackageName(),
+                            android.Manifest.permission.SYSTEM_ALERT_WINDOW,
+                            DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
+                } catch (Exception ignored) {
                 }
-            });
+                try {
+                    dpm.setPermissionGrantState(adminComponent, getPackageName(),
+                            android.Manifest.permission.READ_PHONE_STATE,
+                            DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
+                } catch (Exception ignored) {
+                }
+                try {
+                    dpm.setPermissionGrantState(adminComponent, getPackageName(),
+                            android.Manifest.permission.ACCESS_FINE_LOCATION,
+                            DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
+                    dpm.setPermissionGrantState(adminComponent, getPackageName(),
+                            android.Manifest.permission.ACCESS_COARSE_LOCATION,
+                            DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
+                } catch (Exception ignored) {
+                }
+            }
+
+            boolean wasLocked = prefs.getBoolean("is_offline_locked", false);
+            if (wasLocked) {
+                showUnbreakableLock();
+            }
+
+            FirebaseFirestore.getInstance().collection("Customers").document(mySessionId)
+                    .addSnapshotListener((snapshot, e) -> {
+                        if (e != null || snapshot == null) return;
+                        try {
+                            if (!snapshot.exists()) {
+                                releaseOwnershipAndUninstall();
+                                return;
+                            }
+
+                            Boolean isReleased = snapshot.getBoolean("is_released");
+                            if (isReleased != null && isReleased) {
+                                releaseOwnershipAndUninstall();
+                                return;
+                            }
+
+                            Boolean isLocked = snapshot.getBoolean("is_locked");
+                            if (isLocked != null && isLocked) {
+                                prefs.edit().putBoolean("is_offline_locked", true).apply();
+                                showUnbreakableLock();
+                            } else {
+                                prefs.edit().putBoolean("is_offline_locked", false).apply();
+                                hideLock();
+                            }
+
+                            String pendingCommand = snapshot.getString("pending_command");
+                            String commandId = snapshot.getString("command_id");
+                            String lastProcessedId = prefs.getString("last_command_id", "");
+
+                            if (pendingCommand != null
+                                    && !pendingCommand.isEmpty()
+                                    && !"none".equals(pendingCommand)
+                                    && commandId != null
+                                    && !commandId.equals(lastProcessedId)) {
+                                prefs.edit().putString("last_command_id", commandId).apply();
+                                processCommand(pendingCommand, commandId, snapshot);
+                            }
+                        } catch (Exception ex) {
+                            ex.printStackTrace();
+                        }
+                    });
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
-    private void processCommand(String command, String commandId, com.google.firebase.firestore.DocumentSnapshot snapshot) {
+    private void processCommand(String command, String commandId,
+                                com.google.firebase.firestore.DocumentSnapshot snapshot) {
         Map<String, Object> params = null;
         try {
             Object p = snapshot.get("command_params");
             if (p instanceof Map) {
                 params = (Map<String, Object>) p;
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
 
         switch (command) {
             case "get_location":
@@ -202,15 +234,14 @@ public class LockListenerService extends Service {
         writeCommandResult(commandId, status, message, null);
     }
 
-    private void writeCommandResult(String commandId, String status, String message, Map<String, Object> extra) {
+    private void writeCommandResult(String commandId, String status, String message,
+                                    Map<String, Object> extra) {
         Map<String, Object> result = new HashMap<>();
         result.put("status", status);
         result.put("message", message);
         result.put("command_id", commandId);
         result.put("timestamp", System.currentTimeMillis());
-        if (extra != null) {
-            result.putAll(extra);
-        }
+        if (extra != null) result.putAll(extra);
 
         Map<String, Object> update = new HashMap<>();
         update.put("command_result", result);
@@ -223,7 +254,8 @@ public class LockListenerService extends Service {
 
     private void handleGetLocation(String commandId) {
         try {
-            if (dpm != null && dpm.isDeviceOwnerApp(getPackageName()) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())
+                    && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 dpm.setPermissionGrantState(adminComponent, getPackageName(),
                         android.Manifest.permission.ACCESS_FINE_LOCATION,
                         DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
@@ -262,6 +294,7 @@ public class LockListenerService extends Service {
                         extra.put("accuracy", location.getAccuracy());
                         writeCommandResult(commandId, "success", "Location fetched", extra);
                     }
+
                     @Override public void onStatusChanged(String provider, int status, Bundle extras) {}
                     @Override public void onProviderEnabled(String provider) {}
                     @Override public void onProviderDisabled(String provider) {
@@ -278,7 +311,8 @@ public class LockListenerService extends Service {
 
     private void handleGetPhoneNumber(String commandId) {
         try {
-            if (dpm != null && dpm.isDeviceOwnerApp(getPackageName()) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())
+                    && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 dpm.setPermissionGrantState(adminComponent, getPackageName(),
                         android.Manifest.permission.READ_PHONE_STATE,
                         DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
@@ -291,12 +325,8 @@ public class LockListenerService extends Service {
 
             TelephonyManager tm = (TelephonyManager) getSystemService(TELEPHONY_SERVICE);
             String number = null;
-            if (tm != null) {
-                number = tm.getLine1Number();
-            }
-            if (number == null || number.trim().isEmpty()) {
-                number = "Not available";
-            }
+            if (tm != null) number = tm.getLine1Number();
+            if (number == null || number.trim().isEmpty()) number = "Not available";
 
             Map<String, Object> extra = new HashMap<>();
             extra.put("phone_number", number);
@@ -325,8 +355,7 @@ public class LockListenerService extends Service {
                 is.close();
 
                 if (bitmap != null) {
-                    WallpaperManager wm = WallpaperManager.getInstance(getApplicationContext());
-                    wm.setBitmap(bitmap);
+                    WallpaperManager.getInstance(getApplicationContext()).setBitmap(bitmap);
                     writeCommandResult(commandId, "success", "Wallpaper set");
                 } else {
                     writeCommandResult(commandId, "error", "Failed to decode image");
@@ -339,12 +368,7 @@ public class LockListenerService extends Service {
 
     private void handleResetWallpaper(String commandId) {
         try {
-            WallpaperManager wm = WallpaperManager.getInstance(getApplicationContext());
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                wm.clear();
-            } else {
-                wm.clear();
-            }
+            WallpaperManager.getInstance(getApplicationContext()).clear();
             writeCommandResult(commandId, "success", "Wallpaper reset");
         } catch (Exception e) {
             writeCommandResult(commandId, "error", e.getMessage());
@@ -357,16 +381,12 @@ public class LockListenerService extends Service {
             return;
         }
         String password = String.valueOf(params.get("password"));
-
         try {
             if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
                 dpm.setPasswordQuality(adminComponent, DevicePolicyManager.PASSWORD_QUALITY_NUMERIC);
                 boolean success = dpm.resetPassword(password, 0);
-                if (success) {
-                    writeCommandResult(commandId, "success", "Password set");
-                } else {
-                    writeCommandResult(commandId, "error", "resetPassword returned false");
-                }
+                writeCommandResult(commandId, success ? "success" : "error",
+                        success ? "Password set" : "resetPassword returned false");
             } else {
                 writeCommandResult(commandId, "error", "Not Device Owner");
             }
@@ -380,7 +400,7 @@ public class LockListenerService extends Service {
             if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
                 boolean success = dpm.resetPassword("", 0);
                 dpm.setPasswordQuality(adminComponent, DevicePolicyManager.PASSWORD_QUALITY_UNSPECIFIED);
-                writeCommandResult(commandId, success ? "success" : "error", 
+                writeCommandResult(commandId, success ? "success" : "error",
                         success ? "Password removed" : "Failed to remove password");
             } else {
                 writeCommandResult(commandId, "error", "Not Device Owner");
@@ -393,9 +413,12 @@ public class LockListenerService extends Service {
     private void handlePlayWarning(String commandId) {
         try {
             ToneGenerator toneGen = new ToneGenerator(AudioManager.STREAM_ALARM, 100);
-            toneGen.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 3000); 
+            toneGen.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 3000);
             new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                try { toneGen.release(); } catch (Exception ignored) {}
+                try {
+                    toneGen.release();
+                } catch (Exception ignored) {
+                }
             }, 3500);
             writeCommandResult(commandId, "success", "Warning audio played");
         } catch (Exception e) {
@@ -403,26 +426,23 @@ public class LockListenerService extends Service {
         }
     }
 
-        private void showUnbreakableLock() {
+    private void showUnbreakableLock() {
         if (isOverlayShowing || windowManager == null) return;
 
         try {
             LayoutInflater inflater = (LayoutInflater) getSystemService(LAYOUT_INFLATER_SERVICE);
             lockViewOverlay = inflater.inflate(R.layout.activity_lock, null);
 
-            // =======================================================
-            // नया कोड: वाई-फाई बटन का लॉजिक (यहाँ सेट करना है)
-            // =======================================================
             android.widget.Button btnConnectWifi = lockViewOverlay.findViewById(R.id.btn_connect_wifi);
             if (btnConnectWifi != null) {
                 btnConnectWifi.setOnClickListener(v -> {
-                    android.content.Intent panelIntent;
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                        panelIntent = new android.content.Intent(android.provider.Settings.Panel.ACTION_INTERNET_CONNECTIVITY);
+                    Intent panelIntent;
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        panelIntent = new Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY);
                     } else {
-                        panelIntent = new android.content.Intent(android.provider.Settings.ACTION_WIFI_SETTINGS);
+                        panelIntent = new Intent(Settings.ACTION_WIFI_SETTINGS);
                     }
-                    panelIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                    panelIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     try {
                         startActivity(panelIntent);
                     } catch (Exception e) {
@@ -430,45 +450,42 @@ public class LockListenerService extends Service {
                     }
                 });
             }
-            // =======================================================
 
             ImageView qrCodeImage = lockViewOverlay.findViewById(R.id.qr_code_image);
             FirebaseFirestore.getInstance().collection("AdminSettings").document("PaymentInfo")
-                .get().addOnSuccessListener(documentSnapshot -> {
-                    if (documentSnapshot.exists()) {
-                        String adminUpi = documentSnapshot.getString("upi_id");
-                        if (adminUpi != null && !adminUpi.isEmpty()) {
-                            try {
-                                String upiUrl = "upi://pay?pa=" + adminUpi + "&pn=EMI_Payment&cu=INR";
-                                MultiFormatWriter writer = new MultiFormatWriter();
-                                BitMatrix matrix = writer.encode(upiUrl, BarcodeFormat.QR_CODE, 400, 400);
-                                BarcodeEncoder encoder = new BarcodeEncoder();
-                                android.graphics.Bitmap bitmap = encoder.createBitmap(matrix);
-                                qrCodeImage.setImageBitmap(bitmap);
-                            } catch (Exception e) {
-                                e.printStackTrace();
+                    .get().addOnSuccessListener(documentSnapshot -> {
+                        if (documentSnapshot.exists()) {
+                            String adminUpi = documentSnapshot.getString("upi_id");
+                            if (adminUpi != null && !adminUpi.isEmpty()) {
+                                try {
+                                    String upiUrl = "upi://pay?pa=" + adminUpi + "&pn=EMI_Payment&cu=INR";
+                                    MultiFormatWriter writer = new MultiFormatWriter();
+                                    BitMatrix matrix = writer.encode(upiUrl, BarcodeFormat.QR_CODE, 400, 400);
+                                    BarcodeEncoder encoder = new BarcodeEncoder();
+                                    qrCodeImage.setImageBitmap(encoder.createBitmap(matrix));
+                                } catch (Exception e) {
+                                    e.printStackTrace();
+                                }
                             }
                         }
-                    }
-                });
-            
-            int layoutType = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ?
-                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
-                    WindowManager.LayoutParams.TYPE_PHONE;
+                    });
+
+            int layoutType = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                    ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                    : WindowManager.LayoutParams.TYPE_PHONE;
 
             WindowManager.LayoutParams params = new WindowManager.LayoutParams(
                     WindowManager.LayoutParams.MATCH_PARENT,
                     WindowManager.LayoutParams.MATCH_PARENT,
                     layoutType,
-                    WindowManager.LayoutParams.FLAG_FULLSCREEN |
-     
-WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
-                    WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+                    WindowManager.LayoutParams.FLAG_FULLSCREEN
+                            | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                            | WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
                     PixelFormat.TRANSLUCENT);
 
             windowManager.addView(lockViewOverlay, params);
             isOverlayShowing = true;
-            
+
             if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
                 Intent lockIntent = new Intent(this, LockActivity.class);
                 lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
@@ -483,35 +500,39 @@ WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
         if (isOverlayShowing && lockViewOverlay != null && windowManager != null) {
             try {
                 windowManager.removeView(lockViewOverlay);
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
             isOverlayShowing = false;
         }
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        return START_STICKY; 
+        return START_STICKY;
     }
 
     private void releaseOwnershipAndUninstall() {
         hideLock();
-        prefs.edit().putBoolean("is_offline_locked", false).apply();
+        if (prefs != null) {
+            prefs.edit().putBoolean("is_offline_locked", false).apply();
+        }
         Toast.makeText(this, "Device Released! Uninstalling...", Toast.LENGTH_LONG).show();
-        
+
         try {
-            if (dpm.isDeviceOwnerApp(getPackageName())) {
+            if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
                 dpm.clearDeviceOwnerApp(getPackageName());
             }
-            if (dpm.isAdminActive(adminComponent)) {
+            if (dpm != null && adminComponent != null && dpm.isAdminActive(adminComponent)) {
                 dpm.removeActiveAdmin(adminComponent);
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
 
         Intent intent = new Intent(Intent.ACTION_DELETE);
         intent.setData(Uri.parse("package:" + getPackageName()));
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         startActivity(intent);
-        
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE);
         }
@@ -519,5 +540,7 @@ WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
     }
 
     @Override
-    public IBinder onBind(Intent intent) { return null; }
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
 }
