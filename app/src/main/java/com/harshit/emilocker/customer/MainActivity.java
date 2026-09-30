@@ -20,7 +20,6 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.content.ContextCompat;
 
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.firestore.FirebaseFirestore;
@@ -132,7 +131,7 @@ public class MainActivity extends AppCompatActivity {
     private void enforceStrictSecurityPolicies() {
         if (dpm != null && adminComponent != null && dpm.isDeviceOwnerApp(getPackageName())) {
             
-            // 1. Location Permissions Auto-Grant (Fine, Coarse और Background को पूरी तरह एडमिन कंट्रोल में करना)
+            // 1. Location Permissions Auto-Grant (Fine, Coarse और Background)
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     dpm.setPermissionGrantState(adminComponent, getPackageName(), Manifest.permission.ACCESS_FINE_LOCATION, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
@@ -145,16 +144,7 @@ public class MainActivity extends AppCompatActivity {
                 e.printStackTrace(); 
             }
 
-            // 2. यूजर को लोकेशन की परमिशन खुद बदलने से रोकने के लिए रिस्ट्रिक्शन लगाना
-            try {
-                // अगर आप चाहते हैं कि कस्टमर खुद 'Allow all the time' से छेड़छाड़ न कर सके, 
-                // तो यह एडमिन पॉलिसी परमिशन को लॉक रखती है।
-                dpm.clearUserRestriction(adminComponent, UserManager.DISALLOW_CONFIG_LOCATION);
-            } catch (Exception e) { 
-                e.printStackTrace(); 
-            }
-
-            // 3. अन्य ज़रूरी सिक्योरिटी रिस्ट्रिक्टशंस (डेवलपर ऑप्शन और रिसेट ब्लॉक)
+            // 2. अन्य ज़रूरी सिक्योरिटी रिस्ट्रिक्टशंस (डेवलपर ऑप्शन, फैक्ट्री रीसेट और सेफ बूट ब्लॉक)
             try {
                 dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_DEBUGGING_FEATURES);
                 dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_FACTORY_RESET);
@@ -163,7 +153,7 @@ public class MainActivity extends AppCompatActivity {
                 e.printStackTrace(); 
             }
 
-            // 4. ADB को सिस्टम से ऑफ रखना
+            // 3. ADB को सिस्टम से ऑफ रखना
             try {
                 dpm.setGlobalSetting(adminComponent, Settings.Global.ADB_ENABLED, "0");
             } catch (Exception e) { 
@@ -176,7 +166,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         
-        // ऐप चालू होते ही बैकग्राउंड में परमिशन को दोबारा फोर्सफुली पुश करना ताकि सैमसंग UI उसे परमानेंट ले ले
+        // ऐप चालू होते ही बैकग्राउंड में परमिशन को दोबारा फोर्सफुली पुश करना
         if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -292,17 +282,36 @@ public class MainActivity extends AppCompatActivity {
         String imei = "N/A (Running Device)";
         try {
             if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
+                // READ_PHONE_STATE परमिशन को फोर्सफुली ग्रांट करना ताकि Security Blocked ना आए
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    dpm.setPermissionGrantState(
+                            adminComponent,
+                            getPackageName(),
+                            android.Manifest.permission.READ_PHONE_STATE,
+                            DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
+                }
+                
                 android.telephony.TelephonyManager tm = (android.telephony.TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    imei = tm.getImei();
-                } else {
-                    imei = tm.getDeviceId();
+                if (tm != null) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        imei = tm.getImei();
+                    } else {
+                        imei = tm.getDeviceId();
+                    }
                 }
             }
         } catch (Exception e) {
             imei = "N/A (Security Blocked)";
         }
-        return (imei != null && !imei.trim().isEmpty()) ? imei : "N/A (Running Device)";
+
+        // यदि IMEI फैच करने में दिक्कत आए या Blocked हो, तो Android ID का फॉलबैक इस्तेमाल करें
+        if (imei == null || imei.trim().isEmpty() || imei.contains("Blocked")) {
+            try {
+                imei = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
+            } catch (Exception ignored) {}
+        }
+
+        return (imei != null && !imei.trim().isEmpty()) ? imei : "N/A (Unavailable)";
     }
 
     private final androidx.activity.result.ActivityResultLauncher<ScanOptions> barcodeLauncher =
@@ -344,4 +353,4 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
             });
-                }
+}
