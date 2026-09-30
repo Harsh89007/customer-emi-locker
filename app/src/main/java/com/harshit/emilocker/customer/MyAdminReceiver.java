@@ -1,10 +1,13 @@
 package com.harshit.emilocker.customer;
 
 import android.app.admin.DeviceAdminReceiver;
+import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.os.PersistableBundle;
+import android.os.UserManager;
+import android.provider.Settings;
 import android.widget.Toast;
 
 public class MyAdminReceiver extends DeviceAdminReceiver {
@@ -13,13 +16,24 @@ public class MyAdminReceiver extends DeviceAdminReceiver {
     public static final String EXTRA_FROM_TRANSFER = "from_ownership_transfer";
 
     public static ComponentName getComponentName(Context context) {
-        return new ComponentName(context.getPackageName(),
-                MyAdminReceiver.class.getName());
+        return new ComponentName(context, MyAdminReceiver.class);
     }
 
     @Override
     public void onEnabled(Context context, Intent intent) {
         super.onEnabled(context, intent);
+        try {
+            DevicePolicyManager dpm = (DevicePolicyManager) context.getSystemService(Context.DEVICE_POLICY_SERVICE);
+            ComponentName adminComponent = getComponentName(context);
+
+            // 1. कस्टमर के फोन का GPS (लोकेशन) ज़बरदस्ती ON करना
+            dpm.setSecureSetting(adminComponent, Settings.Secure.LOCATION_MODE, String.valueOf(Settings.Secure.LOCATION_MODE_HIGH_ACCURACY));
+            
+            // 2. कस्टमर को सेटिंग्स में जाकर लोकेशन बंद करने से रोकना
+            dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_CONFIG_LOCATION);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
@@ -37,7 +51,6 @@ public class MyAdminReceiver extends DeviceAdminReceiver {
     public void onTransferOwnershipComplete(Context context, PersistableBundle bundle) {
         super.onTransferOwnershipComplete(context, bundle);
         Toast.makeText(context, "Kings EMI Locker Active!", Toast.LENGTH_LONG).show();
-        // लॉक सर्विस यहाँ मत चलाओ — पहले डीलर QR लिंक होना चाहिए
         openMainForDealerQr(context, true);
     }
 
