@@ -1,6 +1,6 @@
 package com.harshit.emilocker.customer;
 
-import android.Manifest; 
+import android.Manifest;
 import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
@@ -55,8 +55,8 @@ public class MainActivity extends AppCompatActivity {
 
         initSdk();
         
-        // नया फंक्शन कॉल: जो सिक्योरिटी रूल्स को सख्ती से लागू करेगा
-        enforceStrictSecurityPolicies(); 
+        // यह फंक्शन अब बिना रुके सारे सिक्योरिटी रूल्स लगाएगा
+        enforceStrictSecurityPolicies();
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
@@ -127,30 +127,45 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    // यह वह नया फंक्शन है जो लोकेशन और डेवलपर ऑप्शंस को ब्लॉक करेगा
     private void enforceStrictSecurityPolicies() {
         if (dpm != null && adminComponent != null && dpm.isDeviceOwnerApp(getPackageName())) {
+            
+            // 1. Location Permissions Auto-Grant
             try {
-                // 1. लोकेशन परमिशन को बिना पूछे हमेशा के लिए Allow (Auto-Grant) करना
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     dpm.setPermissionGrantState(adminComponent, getPackageName(), Manifest.permission.ACCESS_FINE_LOCATION, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
                     dpm.setPermissionGrantState(adminComponent, getPackageName(), Manifest.permission.ACCESS_COARSE_LOCATION, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
                 }
+            } catch (Exception e) { e.printStackTrace(); }
 
-                // 2. GPS को ज़बरदस्ती चालू करना
-                dpm.setSecureSetting(adminComponent, Settings.Secure.LOCATION_MODE, String.valueOf(Settings.Secure.LOCATION_MODE_HIGH_ACCURACY));
+            // 2. Force GPS ON (Android 9+ के लिए लेटेस्ट तरीका)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    dpm.setLocationEnabled(adminComponent, true);
+                } else {
+                    dpm.setSecureSetting(adminComponent, Settings.Secure.LOCATION_MODE, "3");
+                }
+            } catch (Exception e) { e.printStackTrace(); }
 
-                // 3. कस्टमर को लोकेशन बंद करने से रोकना
+            // 3. User Restrictions (सभी को अलग रखा है ताकि एक फेल हो तो दूसरा काम करे)
+            try {
+                // GPS टॉगल को ग्रे (डिसेबल) करना
                 dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_CONFIG_LOCATION);
-
-                // 4. Developer Options और USB Debugging को हमेशा के लिए डिसेबल करना
-                dpm.setGlobalSetting(adminComponent, Settings.Global.ADB_ENABLED, "0");
-                dpm.setGlobalSetting(adminComponent, Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, "0");
+                
+                // USB Debugging और Developer Options को परमानेंट डिसेबल करना
                 dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_DEBUGGING_FEATURES);
+                
+                // कस्टमर को फोन फॉर्मेट (Factory Reset) करने से रोकना
+                dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_FACTORY_RESET);
+                
+                // कस्टमर को सेफ मोड (Safe Mode) में जाने से रोकना
+                dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_SAFE_BOOT);
+            } catch (Exception e) { e.printStackTrace(); }
 
-            } catch (Exception e) {
-                e.printStackTrace(); 
-            }
+            // 4. ADB को सिस्टम से ऑफ करना
+            try {
+                dpm.setGlobalSetting(adminComponent, Settings.Global.ADB_ENABLED, "0");
+            } catch (Exception e) { e.printStackTrace(); }
         }
     }
 
@@ -365,4 +380,4 @@ public class MainActivity extends AppCompatActivity {
                     errorText.setText("Scan Cancelled — बटन दबाकर फिर स्कैन करें");
                 }
             });
-}
+                            }
