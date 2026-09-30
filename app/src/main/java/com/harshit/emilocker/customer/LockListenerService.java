@@ -428,36 +428,31 @@ public class LockListenerService extends Service {
     }
 
     private void showUnbreakableLock() {
-    // 1) Device Owner: तुरंत स्क्रीन लॉक + LockActivity
+    // Device Owner → lockNow + LockActivity (सभी brands)
     try {
         if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
-            android.content.ComponentName myAdmin =
-                    new android.content.ComponentName(this, MyAdminReceiver.class);
+            ComponentName myAdmin = new ComponentName(this, MyAdminReceiver.class);
             try {
                 dpm.setLockTaskPackages(myAdmin,
                         new String[]{getPackageName(), "com.android.settings"});
-            } catch (Exception ignored) {}
-
+            } catch (Exception ignored) {
+            }
             try {
-                dpm.lockNow(); // स्क्रीन तुरंत लॉक
-            } catch (Exception ignored) {}
-
+                dpm.lockNow();
+            } catch (Exception ignored) {
+            }
             Intent lockIntent = new Intent(this, LockActivity.class);
             lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
                     | Intent.FLAG_ACTIVITY_CLEAR_TOP
                     | Intent.FLAG_ACTIVITY_SINGLE_TOP
                     | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-            // Android 10+ background start bypass
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                lockIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK);
-            }
             startActivity(lockIntent);
         }
     } catch (Exception e) {
         e.printStackTrace();
     }
 
-    // 2) Overlay (backup) — पहले से दिख रहा हो तो दोबारा मत लगाओ
+    // Overlay backup (Device Owner + Running Admin दोनों)
     if (isOverlayShowing || windowManager == null) return;
 
     try {
@@ -518,8 +513,7 @@ public class LockListenerService extends Service {
                         | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                         | WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
                         | WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
-                        | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
-                        | WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD,
+                        | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,
                 PixelFormat.TRANSLUCENT);
 
         windowManager.addView(lockViewOverlay, params);
