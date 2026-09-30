@@ -45,36 +45,43 @@ public class LockActivity extends Activity {
                             WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
         
         if (getIntent() != null && getIntent().getBooleanExtra("force_unlock", false)) {
-    try {
-        DevicePolicyManager dpmLocal =
-                (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
-        if (dpmLocal != null && dpmLocal.isDeviceOwnerApp(getPackageName())) {
-            stopLockTask();
-        }
-    } catch (Exception ignored) {}
-    finish();
-    return;
+            try {
+                DevicePolicyManager dpmLocal =
+                        (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
+                if (dpmLocal != null && dpmLocal.isDeviceOwnerApp(getPackageName())) {
+                    stopLockTask();
+                }
+            } catch (Exception ignored) {}
+            finish();
+            return;
         }
         
         setContentView(R.layout.activity_lock);
         
         qrCodeImage = findViewById(R.id.qr_code_image);
 
-        // वाई-फाई बटन का लॉजिक
+        // वाई-फाई बटन का नया और पावरफुल लॉजिक
         Button btnConnectWifi = findViewById(R.id.btn_connect_wifi);
         if (btnConnectWifi != null) {
             btnConnectWifi.setOnClickListener(v -> {
-                Intent panelIntent;
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    panelIntent = new Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY);
-                } else {
-                    panelIntent = new Intent(Settings.ACTION_WIFI_SETTINGS);
-                }
-                panelIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 try {
+                    Intent panelIntent;
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        panelIntent = new Intent(Settings.Panel.ACTION_WIFI); // ज़्यादातर Q+ फोंस पर यह परफेक्ट काम करता है
+                    } else {
+                        panelIntent = new Intent(Settings.ACTION_WIFI_SETTINGS);
+                    }
+                    panelIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     startActivity(panelIntent);
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    // अगर Panel API ब्लॉक है (कुछ Samsung/Oppo में), तो सीधा Settings खोलें
+                    try {
+                        Intent fallbackIntent = new Intent(Settings.ACTION_WIFI_SETTINGS);
+                        fallbackIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(fallbackIntent);
+                    } catch (Exception ex) {
+                        Toast.makeText(this, "Wi-Fi पैनल खोलने में समस्या आ रही है", Toast.LENGTH_SHORT).show();
+                    }
                 }
             });
         }
@@ -83,6 +90,7 @@ public class LockActivity extends Activity {
         try {
             if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
                 android.content.ComponentName myAdmin = new android.content.ComponentName(this, MyAdminReceiver.class);
+                // "com.android.settings" की वजह से वाई-फाई का पैनल लॉक स्क्रीन पर काम करेगा
                 dpm.setLockTaskPackages(myAdmin, new String[]{getPackageName(), "com.android.settings"});
                 dpm.addUserRestriction(myAdmin, android.os.UserManager.DISALLOW_FACTORY_RESET);
                 startLockTask(); 
@@ -91,7 +99,6 @@ public class LockActivity extends Activity {
             e.printStackTrace();
         }
         
-        // Device Protected Storage से session_id (Customer ID) निकालना
         Context deviceContext = this;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             deviceContext = createDeviceProtectedStorageContext();
@@ -100,7 +107,6 @@ public class LockActivity extends Activity {
         String sessionId = prefs.getString("session_id", null);
 
         if (sessionId != null) {
-            // Firebase से कस्टमर का डेटा लाइव सुनना
             listener = FirebaseFirestore.getInstance().collection("Customers").document(sessionId)
                 .addSnapshotListener((snapshot, error) -> {
                     if (snapshot != null && snapshot.exists()) {
@@ -108,7 +114,6 @@ public class LockActivity extends Activity {
                         if (isLocked != null && !isLocked) {
                             unlockAndClose();
                         } else {
-                            // अगर कस्टमर लॉक है, तो उसकी डीलर की UID निकालो
                             String dealerUid = snapshot.getString("dealer_uid");
                             if (dealerUid != null && !dealerUid.isEmpty()) {
                                 fetchDealerQRCode(dealerUid);
@@ -119,7 +124,6 @@ public class LockActivity extends Activity {
         }
     }
 
-    // नया फंक्शन: यह सिर्फ उसी डीलर की UPI लाएगा जिसने फोन लॉक किया है
     private void fetchDealerQRCode(String dealerUid) {
         FirebaseFirestore.getInstance().collection("Dealers").document(dealerUid)
             .get()
@@ -134,7 +138,6 @@ public class LockActivity extends Activity {
             .addOnFailureListener(e -> Log.e("LockActivity", "Failed to load dealer UPI: " + e.getMessage()));
     }
 
-    // UPI ID को स्कैन होने वाले QR कोड में बदलना
     private void generateQRCode(String upiId) {
         try {
             String upiUrl = "upi://pay?pa=" + upiId + "&pn=EMI_Payment&cu=INR";
