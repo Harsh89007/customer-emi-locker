@@ -33,8 +33,8 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
     private void executeAdminCommand(String command) {
         switch (command) {
             case "LOCK_DEVICE":
-                // कस्टमर का फोन लॉक करने के लिए LockScreenActivity को कॉल करें
-                Intent lockIntent = new Intent(this, LockScreenActivity.class);
+                // यहाँ LockScreenActivity की जगह आपकी असली LockActivity सेट कर दी गई है
+                Intent lockIntent = new Intent(this, LockActivity.class);
                 lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
                 startActivity(lockIntent);
                 break;
@@ -57,7 +57,5 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
     @Override
     public void onNewToken(String token) {
         Log.d("FCM_TOKEN", "New Token: " + token);
-        // यह टोकन आपके सर्वर (डीलर पैनल) पर सेव होगा
     }
 }
-
