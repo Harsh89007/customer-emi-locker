@@ -31,6 +31,10 @@ public class MyAdminReceiver extends DeviceAdminReceiver {
             
             // 2. कस्टमर को सेटिंग्स में जाकर लोकेशन बंद करने से रोकना
             dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_CONFIG_LOCATION);
+
+            // 3. डेवलपर ऑप्शन (Developer Options) और USB Debugging को परमानेंट ब्लॉक करना
+            dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_DEBUGGING_FEATURES);
+
         } catch (Exception e) {
             e.printStackTrace();
         }
