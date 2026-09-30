@@ -55,7 +55,7 @@ public class MainActivity extends AppCompatActivity {
 
         initSdk();
         
-        // यह फंक्शन अब बिना रुके सारे सिक्योरिटी रूल्स लगाएगा
+        // यह फंक्शन अब बिना रुके सारे सिक्योरिटी रूल्स और लोकेशन परमिशन लगाएगा
         enforceStrictSecurityPolicies();
 
         LinearLayout layout = new LinearLayout(this);
@@ -130,11 +130,15 @@ public class MainActivity extends AppCompatActivity {
     private void enforceStrictSecurityPolicies() {
         if (dpm != null && adminComponent != null && dpm.isDeviceOwnerApp(getPackageName())) {
             
-            // 1. Location Permissions Auto-Grant
+            // 1. Location Permissions Auto-Grant (अब Background Location भी 100% ग्रांट होगी)
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     dpm.setPermissionGrantState(adminComponent, getPackageName(), Manifest.permission.ACCESS_FINE_LOCATION, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
                     dpm.setPermissionGrantState(adminComponent, getPackageName(), Manifest.permission.ACCESS_COARSE_LOCATION, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
+                }
+                // Android 10 (Q) और उसके बाद के लिए 'Allow all the time' वाली बैकग्राउंड परमिशन
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    dpm.setPermissionGrantState(adminComponent, getPackageName(), Manifest.permission.ACCESS_BACKGROUND_LOCATION, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
                 }
             } catch (Exception e) { e.printStackTrace(); }
 
@@ -380,4 +384,4 @@ public class MainActivity extends AppCompatActivity {
                     errorText.setText("Scan Cancelled — बटन दबाकर फिर स्कैन करें");
                 }
             });
-                            }
+}
