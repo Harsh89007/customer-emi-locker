@@ -300,9 +300,10 @@ public class LockListenerService extends Service {
             dpm.setFactoryResetProtectionPolicy(adminComponent, policy);
 
             Intent frp = new Intent("com.google.android.gms.auth.FRP_CONFIG_CHANGED");
-            frp.setPackage("com.google.android.gms");
-            frp.addFlags(Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
-            sendBroadcast(frp);
+frp.setPackage("com.google.android.gms");
+// FLAG_RECEIVER_FOREGROUND = 0x10000000 (सभी API पर compile होता है)
+frp.addFlags(0x10000000);
+sendBroadcast(frp);
 
             try {
                 Bundle bundle = new Bundle();
