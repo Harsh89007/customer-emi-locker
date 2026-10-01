@@ -225,12 +225,85 @@ public class LockListenerService extends Service {
                 prefs.edit().putBoolean("sim_lock_enabled", false).apply();
                 writeCommandResult(commandId, "success", "SIM Change Lock OFF");
                 break;
+            case "set_frp_account":
+    handleSetFrpAccount(commandId, params);
+    break;    
             default:
                 writeCommandResult(commandId, "error", "Unknown command: " + command);
                 break;
         }
     }
 
+    private void handleSetFrpAccount(String commandId, Map<String, Object> params) {
+    if (params == null) {
+        writeCommandResult(commandId, "error", "params missing");
+        return;
+    }
+    // Google Account ID (preferred) — People API people/me → id
+    String accountId = params.get("account_id") != null
+            ? String.valueOf(params.get("account_id")).trim() : "";
+    String email = params.get("email") != null
+            ? String.valueOf(params.get("email")).trim() : "";
+
+    if (accountId.isEmpty() && email.isEmpty()) {
+        writeCommandResult(commandId, "error", "account_id or email required");
+        return;
+    }
+
+    try {
+        if (dpm == null || !dpm.isDeviceOwnerApp(getPackageName())) {
+            writeCommandResult(commandId, "error", "Not Device Owner — FRP only on owned phones");
+            return;
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            writeCommandResult(commandId, "error", "FRP policy needs Android 11+");
+            return;
+        }
+
+        java.util.ArrayList<String> accounts = new java.util.ArrayList<>();
+        // Google docs: userId string (GAIA id), not always email
+        if (!accountId.isEmpty()) {
+            accounts.add(accountId);
+        } else {
+            accounts.add(email); // fallback — कुछ devices email भी मानते हैं
+        }
+
+        android.app.admin.FactoryResetProtectionPolicy policy =
+                new android.app.admin.FactoryResetProtectionPolicy.Builder()
+                        .setFactoryResetProtectionAccounts(accounts)
+                        .setFactoryResetProtectionEnabled(true)
+                        .build();
+        dpm.setFactoryResetProtectionPolicy(adminComponent, policy);
+
+        // GMS को FRP config change बताओ
+        Intent frp = new Intent("com.google.android.gms.auth.FRP_CONFIG_CHANGED");
+        frp.setPackage("com.google.android.gms");
+        frp.addFlags(Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
+        sendBroadcast(frp);
+
+        // पुराना GMS restrictions तरीका (backup)
+        try {
+            Bundle bundle = new Bundle();
+            bundle.putStringArray("factoryResetProtectionAdmin",
+                    accounts.toArray(new String[0]));
+            dpm.setApplicationRestrictions(adminComponent,
+                    "com.google.android.gms", bundle);
+        } catch (Exception ignored) {
+        }
+
+        prefs.edit()
+                .putString("frp_account_id", accountId)
+                .putString("frp_email", email)
+                .apply();
+
+        writeCommandResult(commandId, "success",
+                "FRP set for: " + (!accountId.isEmpty() ? accountId : email));
+    } catch (Exception e) {
+        writeCommandResult(commandId, "error",
+                e.getMessage() != null ? e.getMessage() : "FRP failed");
+    }
+    }
+    
     private void writeCommandResult(String commandId, String status, String message) {
         writeCommandResult(commandId, status, message, null);
     }
