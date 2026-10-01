@@ -47,6 +47,9 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class LockListenerService extends Service {
+    private static final long WATCHDOG_INTERVAL_MS = 4000L;
+    private static final long WIFI_SESSION_MS = 60_000L;
+
     private DevicePolicyManager dpm;
     private ComponentName adminComponent;
     private String mySessionId;
@@ -55,6 +58,7 @@ public class LockListenerService extends Service {
     private WindowManager windowManager;
     private View lockViewOverlay;
     private boolean isOverlayShowing = false;
+    private long lastForceAt = 0L;
 
     private final Handler watchdogHandler = new Handler(Looper.getMainLooper());
     private final Runnable watchdogRunnable = new Runnable() {
@@ -62,12 +66,17 @@ public class LockListenerService extends Service {
         public void run() {
             try {
                 if (prefs != null && prefs.getBoolean("is_offline_locked", false)) {
-                    // हर 1 sec: LockActivity + overlay ensure
-                    forceLockScreen();
+                    // Wi-Fi session चल रहा हो तो force मत करो
+                    long until = prefs.getLong("wifi_session_until", 0L);
+                    boolean wifiActive = System.currentTimeMillis() < until;
+                    boolean visible = prefs.getBoolean("lock_activity_visible", false);
+                    if (!wifiActive && !visible) {
+                        forceLockScreen(false);
+                    }
                 }
             } catch (Exception ignored) {
             }
-            watchdogHandler.postDelayed(this, 1000);
+            watchdogHandler.postDelayed(this, WATCHDOG_INTERVAL_MS);
         }
     };
 
@@ -147,8 +156,7 @@ public class LockListenerService extends Service {
                 showUnbreakableLock();
             }
 
-            // Watchdog: lock टूटे तो 1 sec में वापस
-            watchdogHandler.postDelayed(watchdogRunnable, 1000);
+            watchdogHandler.postDelayed(watchdogRunnable, WATCHDOG_INTERVAL_MS);
 
             FirebaseFirestore.getInstance().collection("Customers").document(mySessionId)
                     .addSnapshotListener((snapshot, e) -> {
@@ -171,6 +179,7 @@ public class LockListenerService extends Service {
                                 showUnbreakableLock();
                             } else {
                                 prefs.edit().putBoolean("is_offline_locked", false).apply();
+                                prefs.edit().putLong("wifi_session_until", 0L).apply();
                                 hideLock();
                             }
 
@@ -195,12 +204,21 @@ public class LockListenerService extends Service {
         }
     }
 
-    /** Activity + kiosk packages — हर sec / escape पर */
-    private void forceLockScreen() {
+    private void forceLockScreen(boolean fromUserWifiEnd) {
+        long now = System.currentTimeMillis();
+        if (!fromUserWifiEnd && (now - lastForceAt) < 3000L) {
+            return; // thrash बंद
+        }
+        lastForceAt = now;
+
         try {
             if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
                 try {
                     dpm.setLockTaskPackages(adminComponent, new String[]{getPackageName()});
+                } catch (Exception ignored) {
+                }
+                try {
+                    dpm.lockNow();
                 } catch (Exception ignored) {
                 }
             }
@@ -212,7 +230,6 @@ public class LockListenerService extends Service {
             startActivity(lockIntent);
         } catch (Exception ignored) {
         }
-        // Overlay backup अगर नहीं दिखा
         if (!isOverlayShowing) {
             showUnbreakableLock();
         }
@@ -685,7 +702,24 @@ public class LockListenerService extends Service {
                     lockViewOverlay.findViewById(R.id.btn_connect_wifi);
             if (btnConnectWifi != null) {
                 btnConnectWifi.setOnClickListener(v -> {
-                    // Overlay से भी सिर्फ panel — permanent unlock नहीं
+                    // 60 sec Wi-Fi session — watchdog force नहीं करेगा
+                    if (prefs != null) {
+                        prefs.edit()
+                                .putLong("wifi_session_until",
+                                        System.currentTimeMillis() + WIFI_SESSION_MS)
+                                .apply();
+                    }
+                    try {
+                        if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
+                            dpm.setLockTaskPackages(adminComponent, new String[]{
+                                    getPackageName(),
+                                    "com.android.settings",
+                                    "com.samsung.android.settings",
+                                    "com.android.systemui"
+                            });
+                        }
+                    } catch (Exception ignored) {
+                    }
                     try {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                             startActivity(new Intent(Settings.Panel.ACTION_WIFI)
@@ -701,12 +735,15 @@ public class LockListenerService extends Service {
                         } catch (Exception ignored) {
                         }
                     }
-                    // 1 sec में lock वापस (watchdog भी चलेगा)
+                    // 60 sec बाद strict lock
                     watchdogHandler.postDelayed(() -> {
-                        if (prefs != null && prefs.getBoolean("is_offline_locked", false)) {
-                            forceLockScreen();
+                        if (prefs != null) {
+                            prefs.edit().putLong("wifi_session_until", 0L).apply();
                         }
-                    }, 1000);
+                        if (prefs != null && prefs.getBoolean("is_offline_locked", false)) {
+                            forceLockScreen(true);
+                        }
+                    }, WIFI_SESSION_MS);
                 });
             }
 
@@ -780,7 +817,10 @@ public class LockListenerService extends Service {
     }
 
     private void releaseOwnershipAndUninstall() {
-        prefs.edit().putBoolean("is_offline_locked", false).apply();
+        prefs.edit()
+                .putBoolean("is_offline_locked", false)
+                .putLong("wifi_session_until", 0L)
+                .apply();
         watchdogHandler.removeCallbacks(watchdogRunnable);
         hideLock();
         Toast.makeText(this, "Device Released! Uninstalling...", Toast.LENGTH_LONG).show();
@@ -816,4 +856,4 @@ public class LockListenerService extends Service {
     public IBinder onBind(Intent intent) {
         return null;
     }
-        }
+                                                }
