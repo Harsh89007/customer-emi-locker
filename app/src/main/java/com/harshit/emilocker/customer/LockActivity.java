@@ -2,6 +2,7 @@ package com.harshit.emilocker.customer;
 
 import android.app.Activity;
 import android.app.admin.DevicePolicyManager;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -25,25 +26,15 @@ import com.journeyapps.barcodescanner.BarcodeEncoder;
 
 public class LockActivity extends Activity {
     private DevicePolicyManager dpm;
+    private ComponentName adminComponent;
     private ListenerRegistration listener;
     private ImageView qrCodeImage;
+    private boolean openingWifi = false; // Wi-Fi खोलते समय re-lock मत करो
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        
-        // नेविगेशन बार और स्टेटस बार को पूरी तरह छुपाना
-        getWindow().getDecorView().setSystemUiVisibility(
-            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
-            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
-            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
-            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
-            View.SYSTEM_UI_FLAG_FULLSCREEN);
-        
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON |
-                             WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
-                            WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
-        
+
         if (getIntent() != null && getIntent().getBooleanExtra("force_unlock", false)) {
             try {
                 DevicePolicyManager dpmLocal =
@@ -51,52 +42,46 @@ public class LockActivity extends Activity {
                 if (dpmLocal != null && dpmLocal.isDeviceOwnerApp(getPackageName())) {
                     stopLockTask();
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
             finish();
             return;
         }
-        
+
+        getWindow().getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_FULLSCREEN);
+
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                | WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
+                | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
+
         setContentView(R.layout.activity_lock);
-        
         qrCodeImage = findViewById(R.id.qr_code_image);
 
-        // वाई-फाई बटन का 100% सिक्योर लॉजिक (नो रिस्क)
-        Button btnConnectWifi = findViewById(R.id.btn_connect_wifi);
-        if (btnConnectWifi != null) {
-            btnConnectWifi.setOnClickListener(v -> {
-                try {
-                    // सिर्फ Android 10+ के लिए सुरक्षित पॉपअप पैनल खोलें
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        Intent panelIntent = new Intent(Settings.Panel.ACTION_WIFI);
-                        startActivity(panelIntent);
-                    } else {
-                        // पुराने फोंस में रिस्क नहीं लेंगे, सिम डालने को कहेंगे
-                        Toast.makeText(this, "कृपया इंटरनेट के लिए फोन में Data वाली SIM डालें", Toast.LENGTH_LONG).show();
-                    }
-                } catch (Exception e) {
-                    // अगर पॉपअप क्रैश होता है, तो पूरी सेटिंग्स नहीं खोलेंगे, सिम डालने को कहेंगे
-                    Toast.makeText(this, "कृपया इंटरनेट के लिए फोन में Data वाली SIM डालें", Toast.LENGTH_LONG).show();
-                }
-            });
-        }
-
         dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
+        adminComponent = new ComponentName(this, MyAdminReceiver.class);
+
+        // Kiosk: सिर्फ अपना app (Settings package allow नहीं — security)
         try {
             if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
-                android.content.ComponentName myAdmin = new android.content.ComponentName(this, MyAdminReceiver.class);
-                
-                // === ULTRA SECURE KIOSK MODE ===
-                // हमने "com.android.settings" यहाँ से हटा दिया है। 
-                // अब कस्टमर किसी भी कीमत पर फोन की सेटिंग्स नहीं खोल पाएगा।
-                dpm.setLockTaskPackages(myAdmin, new String[]{getPackageName()});
-                
-                dpm.addUserRestriction(myAdmin, android.os.UserManager.DISALLOW_FACTORY_RESET);
-                startLockTask(); 
+                dpm.setLockTaskPackages(adminComponent, new String[]{getPackageName()});
+                dpm.addUserRestriction(adminComponent,
+                        android.os.UserManager.DISALLOW_FACTORY_RESET);
+                startLockTask();
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
-        
+
+        Button btnConnectWifi = findViewById(R.id.btn_connect_wifi);
+        if (btnConnectWifi != null) {
+            btnConnectWifi.setOnClickListener(v -> openWifiSafely());
+        }
+
         Context deviceContext = this;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             deviceContext = createDeviceProtectedStorageContext();
@@ -105,35 +90,109 @@ public class LockActivity extends Activity {
         String sessionId = prefs.getString("session_id", null);
 
         if (sessionId != null) {
-            listener = FirebaseFirestore.getInstance().collection("Customers").document(sessionId)
-                .addSnapshotListener((snapshot, error) -> {
-                    if (snapshot != null && snapshot.exists()) {
-                        Boolean isLocked = snapshot.getBoolean("is_locked");
-                        if (isLocked != null && !isLocked) {
-                            unlockAndClose();
-                        } else {
-                            String dealerUid = snapshot.getString("dealer_uid");
-                            if (dealerUid != null && !dealerUid.isEmpty()) {
-                                fetchDealerQRCode(dealerUid);
+            listener = FirebaseFirestore.getInstance()
+                    .collection("Customers").document(sessionId)
+                    .addSnapshotListener((snapshot, error) -> {
+                        if (snapshot != null && snapshot.exists()) {
+                            Boolean isLocked = snapshot.getBoolean("is_locked");
+                            if (isLocked != null && !isLocked) {
+                                unlockAndClose();
+                            } else {
+                                String dealerUid = snapshot.getString("dealer_uid");
+                                if (dealerUid != null && !dealerUid.isEmpty()) {
+                                    fetchDealerQRCode(dealerUid);
+                                }
                             }
                         }
+                    });
+        }
+    }
+
+    /**
+     * Kiosk में Wi-Fi: थोड़ी देर lock-task हटाओ → panel खोलो → onResume पर वापस lock.
+     * Full Settings app allow नहीं करते।
+     */
+    private void openWifiSafely() {
+        openingWifi = true;
+        try {
+            if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
+                try {
+                    stopLockTask();
+                } catch (Exception ignored) {
+                }
+            }
+
+            boolean opened = false;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                try {
+                    startActivity(new Intent(Settings.Panel.ACTION_WIFI));
+                    opened = true;
+                } catch (Exception ignored) {
+                }
+                if (!opened) {
+                    try {
+                        startActivity(new Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY));
+                        opened = true;
+                    } catch (Exception ignored) {
                     }
-                });
+                }
+            }
+            if (!opened) {
+                try {
+                    Intent i = new Intent(Settings.ACTION_WIFI_SETTINGS);
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(i);
+                    opened = true;
+                } catch (Exception ignored) {
+                }
+            }
+            if (!opened) {
+                openingWifi = false;
+                reenterLockTask();
+                Toast.makeText(this,
+                        "Wi-Fi नहीं खुला। Data SIM डालें या Notification से Wi-Fi ON करें।",
+                        Toast.LENGTH_LONG).show();
+            }
+        } catch (Exception e) {
+            openingWifi = false;
+            reenterLockTask();
+            Toast.makeText(this, "Wi-Fi error: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void reenterLockTask() {
+        try {
+            if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
+                dpm.setLockTaskPackages(adminComponent, new String[]{getPackageName()});
+                startLockTask();
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Wi-Fi panel से वापस आए तो फिर kiosk
+        if (openingWifi) {
+            openingWifi = false;
+            reenterLockTask();
         }
     }
 
     private void fetchDealerQRCode(String dealerUid) {
         FirebaseFirestore.getInstance().collection("Dealers").document(dealerUid)
-            .get()
-            .addOnSuccessListener(documentSnapshot -> {
-                if (documentSnapshot.exists()) {
-                    String dealerUpi = documentSnapshot.getString("upi_id");
-                    if (dealerUpi != null && !dealerUpi.isEmpty()) {
-                        generateQRCode(dealerUpi);
+                .get()
+                .addOnSuccessListener(documentSnapshot -> {
+                    if (documentSnapshot.exists()) {
+                        String dealerUpi = documentSnapshot.getString("upi_id");
+                        if (dealerUpi != null && !dealerUpi.isEmpty()) {
+                            generateQRCode(dealerUpi);
+                        }
                     }
-                }
-            })
-            .addOnFailureListener(e -> Log.e("LockActivity", "Failed to load dealer UPI: " + e.getMessage()));
+                })
+                .addOnFailureListener(e ->
+                        Log.e("LockActivity", "Failed to load dealer UPI: " + e.getMessage()));
     }
 
     private void generateQRCode(String upiId) {
@@ -142,8 +201,7 @@ public class LockActivity extends Activity {
             MultiFormatWriter writer = new MultiFormatWriter();
             BitMatrix matrix = writer.encode(upiUrl, BarcodeFormat.QR_CODE, 400, 400);
             BarcodeEncoder encoder = new BarcodeEncoder();
-            Bitmap bitmap = encoder.createBitmap(matrix);
-            qrCodeImage.setImageBitmap(bitmap);
+            qrCodeImage.setImageBitmap(encoder.createBitmap(matrix));
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -152,16 +210,18 @@ public class LockActivity extends Activity {
     @Override
     protected void onUserLeaveHint() {
         super.onUserLeaveHint();
+        // Wi-Fi खोलते समय वापस मत घसीटो
+        if (openingWifi) return;
         if (listener != null) {
             Intent i = new Intent(this, LockActivity.class);
-            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
             startActivity(i);
         }
     }
 
     @Override
     public void onBackPressed() {
-        // बैक बटन को काम करने से रोक दिया गया है
+        // blocked
     }
 
     private void unlockAndClose() {
@@ -169,8 +229,9 @@ public class LockActivity extends Activity {
             if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
                 stopLockTask();
             }
-        } catch (Exception e) {}
+        } catch (Exception ignored) {
+        }
         if (listener != null) listener.remove();
         finish();
     }
-}
+        }
