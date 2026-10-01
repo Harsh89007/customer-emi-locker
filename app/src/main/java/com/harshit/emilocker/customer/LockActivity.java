@@ -6,7 +6,6 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.graphics.Bitmap;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -27,12 +26,13 @@ import com.google.zxing.common.BitMatrix;
 import com.journeyapps.barcodescanner.BarcodeEncoder;
 
 public class LockActivity extends Activity {
+    private static final long WIFI_SESSION_MS = 60_000L; // 60 sec password डालने का समय
+
     private DevicePolicyManager dpm;
     private ComponentName adminComponent;
     private ListenerRegistration listener;
     private ImageView qrCodeImage;
-    private boolean openingWifi = false;
-    private boolean allowExit = false; // सिर्फ force_unlock / admin unlock
+    private boolean allowExit = false;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private SharedPreferences prefs;
 
@@ -42,6 +42,7 @@ public class LockActivity extends Activity {
 
         if (getIntent() != null && getIntent().getBooleanExtra("force_unlock", false)) {
             allowExit = true;
+            clearWifiSession();
             try {
                 DevicePolicyManager dpmLocal =
                         (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
@@ -78,7 +79,13 @@ public class LockActivity extends Activity {
         }
         prefs = deviceContext.getSharedPreferences("AppPrefs", MODE_PRIVATE);
 
-        enterKiosk();
+        markLockVisible(true);
+
+        if (!isWifiSessionActive()) {
+            enterKioskStrict();
+        } else {
+            enterKioskWithSettings();
+        }
 
         Button btnConnectWifi = findViewById(R.id.btn_connect_wifi);
         if (btnConnectWifi != null) {
@@ -105,10 +112,36 @@ public class LockActivity extends Activity {
         }
     }
 
-    private void enterKiosk() {
+    private void markLockVisible(boolean visible) {
+        if (prefs != null) {
+            prefs.edit().putBoolean("lock_activity_visible", visible).apply();
+        }
+    }
+
+    private boolean isWifiSessionActive() {
+        if (prefs == null) return false;
+        long until = prefs.getLong("wifi_session_until", 0L);
+        return System.currentTimeMillis() < until;
+    }
+
+    private void startWifiSession() {
+        if (prefs != null) {
+            prefs.edit()
+                    .putLong("wifi_session_until", System.currentTimeMillis() + WIFI_SESSION_MS)
+                    .apply();
+        }
+    }
+
+    private void clearWifiSession() {
+        if (prefs != null) {
+            prefs.edit().putLong("wifi_session_until", 0L).apply();
+        }
+    }
+
+    /** सिर्फ अपना app — Home / Settings से भागना बंद */
+    private void enterKioskStrict() {
         try {
             if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
-                // सिर्फ अपना package — Settings allow नहीं
                 dpm.setLockTaskPackages(adminComponent, new String[]{getPackageName()});
                 try {
                     dpm.addUserRestriction(adminComponent,
@@ -127,23 +160,32 @@ public class LockActivity extends Activity {
         }
     }
 
-    /**
-     * Wi-Fi: पहले बिना stopLockTask try।
-     * ज़रूरत पड़े तो थोड़ी देर stop → panel → 800ms में ज़बरदस्ती वापस kiosk + यह activity.
-     */
-    private void openWifiSafely() {
-        openingWifi = true;
+    /** Wi-Fi session: Settings package allow (सिर्फ 60 sec) */
+    private void enterKioskWithSettings() {
         try {
             if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
-                // Panel खुलने दो, full unlock नहीं
                 dpm.setLockTaskPackages(adminComponent, new String[]{
                         getPackageName(),
                         "com.android.settings",
-                        "com.samsung.android.settings"
+                        "com.samsung.android.settings",
+                        "com.android.systemui"
                 });
+                startLockTask();
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            e.printStackTrace();
         }
+    }
+
+    /**
+     * Wi-Fi: 60 sec session।
+     * Customer network चुन + password डाल सकता है।
+     * Session खत्म / Done / वापस आने पर strict kiosk।
+     * Permanent unlock नहीं।
+     */
+    private void openWifiSafely() {
+        startWifiSession();
+        enterKioskWithSettings();
 
         boolean opened = false;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -171,27 +213,25 @@ public class LockActivity extends Activity {
         }
 
         if (!opened) {
-            openingWifi = false;
-            enterKiosk();
+            clearWifiSession();
+            enterKioskStrict();
             Toast.makeText(this, "Wi-Fi नहीं खुला। Data SIM लगाएँ।", Toast.LENGTH_LONG).show();
             return;
         }
 
-        // 1 sec बाद सिर्फ अपना app — Settings allow हटाओ + lock screen वापस
+        Toast.makeText(this, "Wi-Fi जोड़ो (60 sec)। Done दबाओ — lock वापस आएगा।",
+                Toast.LENGTH_LONG).show();
+
+        // 60 sec बाद session बंद + strict lock
         handler.postDelayed(() -> {
-            openingWifi = false;
-            try {
-                if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
-                    dpm.setLockTaskPackages(adminComponent, new String[]{getPackageName()});
-                }
-            } catch (Exception ignored) {
-            }
-            if (isStillLocked()) {
+            if (!allowExit && isStillLocked()) {
+                clearWifiSession();
+                enterKioskStrict();
                 bringLockBack();
             }
-        }, 1000);
+        }, WIFI_SESSION_MS);
     }
-    
+
     private boolean isStillLocked() {
         if (allowExit) return false;
         if (prefs == null) return true;
@@ -200,7 +240,7 @@ public class LockActivity extends Activity {
 
     private void bringLockBack() {
         try {
-            enterKiosk();
+            enterKioskStrict();
             Intent i = new Intent(this, LockActivity.class);
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
                     | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
@@ -213,35 +253,43 @@ public class LockActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        openingWifi = false;
-        if (isStillLocked()) {
-            enterKiosk();
+        markLockVisible(true);
+        // Wi-Fi panel से वापस → session खत्म, strict kiosk
+        if (isStillLocked() && !isWifiSessionActive()) {
+            clearWifiSession();
+            enterKioskStrict();
+        } else if (isStillLocked() && isWifiSessionActive()) {
+            // अभी session चल रहा — settings allow रखो
+            enterKioskWithSettings();
         }
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        // Home / Recents → 1 sec में वापस
-        if (!allowExit && isStillLocked()) {
+        markLockVisible(false);
+        // Wi-Fi session में जबरदस्ती वापस मत घसीटो
+        if (allowExit || isWifiSessionActive()) return;
+        if (isStillLocked()) {
             handler.postDelayed(() -> {
-                if (isStillLocked()) {
+                if (isStillLocked() && !isWifiSessionActive()) {
                     bringLockBack();
                 }
-            }, 1000);
+            }, 2500);
         }
     }
 
     @Override
     protected void onUserLeaveHint() {
         super.onUserLeaveHint();
-        if (allowExit) return;
-        // Wi-Fi या Home — दोनों में जल्दी वापस
-        handler.postDelayed(() -> {
-            if (isStillLocked()) {
-                bringLockBack();
-            }
-        }, openingWifi ? 800 : 300);
+        if (allowExit || isWifiSessionActive()) return;
+        if (isStillLocked()) {
+            handler.postDelayed(() -> {
+                if (isStillLocked() && !isWifiSessionActive()) {
+                    bringLockBack();
+                }
+            }, 2000);
+        }
     }
 
     private void fetchDealerQRCode(String dealerUid) {
@@ -278,6 +326,8 @@ public class LockActivity extends Activity {
 
     private void unlockAndClose() {
         allowExit = true;
+        clearWifiSession();
+        markLockVisible(false);
         handler.removeCallbacksAndMessages(null);
         try {
             if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
@@ -292,6 +342,7 @@ public class LockActivity extends Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        markLockVisible(false);
         handler.removeCallbacksAndMessages(null);
         if (listener != null) {
             listener.remove();
