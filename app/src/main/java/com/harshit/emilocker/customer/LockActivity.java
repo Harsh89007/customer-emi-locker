@@ -133,6 +133,17 @@ public class LockActivity extends Activity {
      */
     private void openWifiSafely() {
         openingWifi = true;
+        try {
+            if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
+                // Panel खुलने दो, full unlock नहीं
+                dpm.setLockTaskPackages(adminComponent, new String[]{
+                        getPackageName(),
+                        "com.android.settings",
+                        "com.samsung.android.settings"
+                });
+            }
+        } catch (Exception ignored) {
+        }
 
         boolean opened = false;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -149,15 +160,7 @@ public class LockActivity extends Activity {
                 }
             }
         }
-
         if (!opened) {
-            // Panel lock-task में नहीं खुला → थोड़ी देर kiosk हटाकर खोलो
-            try {
-                if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
-                    stopLockTask();
-                }
-            } catch (Exception ignored) {
-            }
             try {
                 Intent i = new Intent(Settings.ACTION_WIFI_SETTINGS);
                 i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -170,21 +173,25 @@ public class LockActivity extends Activity {
         if (!opened) {
             openingWifi = false;
             enterKiosk();
-            Toast.makeText(this,
-                    "Wi-Fi नहीं खुला। Data SIM इस्तेमाल करें।",
-                    Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Wi-Fi नहीं खुला। Data SIM लगाएँ।", Toast.LENGTH_LONG).show();
             return;
         }
 
-        // 800ms बाद ज़बरदस्ती lock वापस — customer home पर भी फँसे तो screen लौट आए
+        // 1 sec बाद सिर्फ अपना app — Settings allow हटाओ + lock screen वापस
         handler.postDelayed(() -> {
             openingWifi = false;
+            try {
+                if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
+                    dpm.setLockTaskPackages(adminComponent, new String[]{getPackageName()});
+                }
+            } catch (Exception ignored) {
+            }
             if (isStillLocked()) {
                 bringLockBack();
             }
-        }, 800);
+        }, 1000);
     }
-
+    
     private boolean isStillLocked() {
         if (allowExit) return false;
         if (prefs == null) return true;
