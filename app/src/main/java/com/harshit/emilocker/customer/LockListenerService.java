@@ -254,60 +254,181 @@ public class LockListenerService extends Service {
     }
 
     private void handleGetLocation(String commandId) {
-        try {
-            if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())
-                    && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+    try {
+        // 1) Permissions auto-grant (Device Owner)
+        if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())
+                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
                 dpm.setPermissionGrantState(adminComponent, getPackageName(),
                         android.Manifest.permission.ACCESS_FINE_LOCATION,
                         DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
                 dpm.setPermissionGrantState(adminComponent, getPackageName(),
                         android.Manifest.permission.ACCESS_COARSE_LOCATION,
                         DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    dpm.setPermissionGrantState(adminComponent, getPackageName(),
+                            android.Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+                            DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
+                }
+            } catch (Exception ignored) {
             }
 
-            LocationManager lm = (LocationManager) getSystemService(LOCATION_SERVICE);
-            if (lm == null) {
-                writeCommandResult(commandId, "error", "LocationManager not available");
-                return;
+            // 2) Location services ON करो (API 28+) — बिना Settings खोले
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                try {
+                    dpm.setLocationEnabled(adminComponent, true);
+                } catch (Exception ignored) {
+                }
             }
+        }
 
-            Location loc = null;
+        LocationManager lm = (LocationManager) getSystemService(LOCATION_SERVICE);
+        if (lm == null) {
+            writeCommandResult(commandId, "error", "LocationManager not available");
+            return;
+        }
+
+        // 3) पहले last-known try करो
+        Location loc = null;
+        try {
             if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                 loc = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
             }
+        } catch (Exception ignored) {
+        }
+        try {
             if (loc == null && lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
                 loc = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
             }
+        } catch (Exception ignored) {
+        }
+        try {
+            if (loc == null && lm.isProviderEnabled(LocationManager.PASSIVE_PROVIDER)) {
+                loc = lm.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER);
+            }
+        } catch (Exception ignored) {
+        }
 
+        // 2 मिनट से पुराना last-known मत भेजो
+        if (loc != null && (System.currentTimeMillis() - loc.getTime()) < 2 * 60 * 1000) {
+            Map<String, Object> extra = new HashMap<>();
+            extra.put("latitude", loc.getLatitude());
+            extra.put("longitude", loc.getLongitude());
+            extra.put("accuracy", loc.getAccuracy());
+            writeCommandResult(commandId, "success", "Location fetched", extra);
+            return;
+        }
+
+        // 4) Fresh update लो — जो provider ON हो
+        final boolean[] done = {false};
+        final Handler timeoutHandler = new Handler(Looper.getMainLooper());
+
+        LocationListener listener = new LocationListener() {
+            @Override
+            public void onLocationChanged(Location location) {
+                if (done[0]) return;
+                done[0] = true;
+                try {
+                    lm.removeUpdates(this);
+                } catch (Exception ignored) {
+                }
+                timeoutHandler.removeCallbacksAndMessages(null);
+
+                Map<String, Object> extra = new HashMap<>();
+                extra.put("latitude", location.getLatitude());
+                extra.put("longitude", location.getLongitude());
+                extra.put("accuracy", location.getAccuracy());
+                writeCommandResult(commandId, "success", "Location fetched", extra);
+            }
+
+            @Override
+            public void onStatusChanged(String provider, int status, Bundle extras) {
+            }
+
+            @Override
+            public void onProviderEnabled(String provider) {
+            }
+
+            @Override
+            public void onProviderDisabled(String provider) {
+                // एक provider बंद हो तो error मत भेजो — दूसरा try हो सकता है
+            }
+        };
+
+        boolean requested = false;
+        try {
+            if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                lm.requestLocationUpdates(LocationManager.GPS_PROVIDER,
+                        0, 0, listener, Looper.getMainLooper());
+                requested = true;
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER,
+                        0, 0, listener, Looper.getMainLooper());
+                requested = true;
+            }
+        } catch (Exception ignored) {
+        }
+
+        if (!requested) {
+            // Provider अभी भी OFF (non-owner या setLocationEnabled fail)
+            // पुराना last-known हो तो वो भेज दो
             if (loc != null) {
                 Map<String, Object> extra = new HashMap<>();
                 extra.put("latitude", loc.getLatitude());
                 extra.put("longitude", loc.getLongitude());
                 extra.put("accuracy", loc.getAccuracy());
-                writeCommandResult(commandId, "success", "Location fetched", extra);
+                writeCommandResult(commandId, "success",
+                        "Location fetched (cached, GPS off)", extra);
             } else {
-                lm.requestSingleUpdate(LocationManager.NETWORK_PROVIDER, new LocationListener() {
-                    @Override
-                    public void onLocationChanged(Location location) {
-                        Map<String, Object> extra = new HashMap<>();
-                        extra.put("latitude", location.getLatitude());
-                        extra.put("longitude", location.getLongitude());
-                        extra.put("accuracy", location.getAccuracy());
-                        writeCommandResult(commandId, "success", "Location fetched", extra);
-                    }
-
-                    @Override public void onStatusChanged(String provider, int status, Bundle extras) {}
-                    @Override public void onProviderEnabled(String provider) {}
-                    @Override public void onProviderDisabled(String provider) {
-                        writeCommandResult(commandId, "error", "Location provider disabled");
-                    }
-                }, Looper.getMainLooper());
+                writeCommandResult(commandId, "error",
+                        "Location is OFF on device. Turn on Location once.");
             }
-        } catch (SecurityException se) {
-            writeCommandResult(commandId, "error", "Location permission denied");
-        } catch (Exception e) {
-            writeCommandResult(commandId, "error", e.getMessage());
+            return;
         }
+
+        // 5) 25 sec timeout
+        timeoutHandler.postDelayed(() -> {
+            if (done[0]) return;
+            done[0] = true;
+            try {
+                lm.removeUpdates(listener);
+            } catch (Exception ignored) {
+            }
+
+            Location last = null;
+            try {
+                last = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+            } catch (Exception ignored) {
+            }
+            if (last == null) {
+                try {
+                    last = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+                } catch (Exception ignored) {
+                }
+            }
+            if (last != null) {
+                Map<String, Object> extra = new HashMap<>();
+                extra.put("latitude", last.getLatitude());
+                extra.put("longitude", last.getLongitude());
+                extra.put("accuracy", last.getAccuracy());
+                writeCommandResult(commandId, "success",
+                        "Location fetched (timeout fallback)", extra);
+            } else {
+                writeCommandResult(commandId, "error",
+                        "Location timeout — GPS signal weak or Location OFF");
+            }
+        }, 25000);
+
+    } catch (SecurityException se) {
+        writeCommandResult(commandId, "error", "Location permission denied");
+    } catch (Exception e) {
+        writeCommandResult(commandId, "error",
+                e.getMessage() != null ? e.getMessage() : "Location error");
+    }
     }
 
     private void handleGetPhoneNumber(String commandId) {
