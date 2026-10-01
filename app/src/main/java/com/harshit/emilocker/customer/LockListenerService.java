@@ -326,8 +326,10 @@ public class LockListenerService extends Service {
         String email = params.get("email") != null
                 ? String.valueOf(params.get("email")).trim() : "";
 
-        if (accountId.isEmpty() && email.isEmpty()) {
-            writeCommandResult(commandId, "error", "account_id or email required");
+        // Real FRP = Account ID जरूरी
+        if (accountId.isEmpty()) {
+            writeCommandResult(commandId, "error",
+                    "frp_account_id missing — Dealer must Google Sign-In FRP first");
             return;
         }
 
@@ -338,16 +340,12 @@ public class LockListenerService extends Service {
                 return;
             }
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-                writeCommandResult(commandId, "error", "FRP policy needs Android 11+");
+                writeCommandResult(commandId, "error", "FRP needs Android 11+");
                 return;
             }
 
             ArrayList<String> accounts = new ArrayList<>();
-            if (!accountId.isEmpty()) {
-                accounts.add(accountId);
-            } else {
-                accounts.add(email);
-            }
+            accounts.add(accountId); // GAIA ID — email मत डालो यहाँ
 
             FactoryResetProtectionPolicy policy =
                     new FactoryResetProtectionPolicy.Builder()
@@ -364,7 +362,7 @@ public class LockListenerService extends Service {
             try {
                 Bundle bundle = new Bundle();
                 bundle.putStringArray("factoryResetProtectionAdmin",
-                        accounts.toArray(new String[0]));
+                        new String[]{accountId});
                 dpm.setApplicationRestrictions(adminComponent,
                         "com.google.android.gms", bundle);
             } catch (Exception ignored) {
@@ -376,13 +374,13 @@ public class LockListenerService extends Service {
                     .apply();
 
             writeCommandResult(commandId, "success",
-                    "FRP set for: " + (!accountId.isEmpty() ? accountId : email));
+                    "FRP set. Reset के बाद Gmail: " + (email.isEmpty() ? accountId : email));
         } catch (Exception e) {
             writeCommandResult(commandId, "error",
                     e.getMessage() != null ? e.getMessage() : "FRP failed");
         }
     }
-
+    
     private void handleGetLocation(String commandId) {
         try {
             if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())
