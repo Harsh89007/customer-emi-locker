@@ -56,6 +56,21 @@ public class LockListenerService extends Service {
     private View lockViewOverlay;
     private boolean isOverlayShowing = false;
 
+    private final Handler watchdogHandler = new Handler(Looper.getMainLooper());
+    private final Runnable watchdogRunnable = new Runnable() {
+        @Override
+        public void run() {
+            try {
+                if (prefs != null && prefs.getBoolean("is_offline_locked", false)) {
+                    // हर 1 sec: LockActivity + overlay ensure
+                    forceLockScreen();
+                }
+            } catch (Exception ignored) {
+            }
+            watchdogHandler.postDelayed(this, 1000);
+        }
+    };
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -132,6 +147,9 @@ public class LockListenerService extends Service {
                 showUnbreakableLock();
             }
 
+            // Watchdog: lock टूटे तो 1 sec में वापस
+            watchdogHandler.postDelayed(watchdogRunnable, 1000);
+
             FirebaseFirestore.getInstance().collection("Customers").document(mySessionId)
                     .addSnapshotListener((snapshot, e) -> {
                         if (e != null || snapshot == null) return;
@@ -174,6 +192,29 @@ public class LockListenerService extends Service {
                     });
         } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+
+    /** Activity + kiosk packages — हर sec / escape पर */
+    private void forceLockScreen() {
+        try {
+            if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
+                try {
+                    dpm.setLockTaskPackages(adminComponent, new String[]{getPackageName()});
+                } catch (Exception ignored) {
+                }
+            }
+            Intent lockIntent = new Intent(this, LockActivity.class);
+            lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                    | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                    | Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            startActivity(lockIntent);
+        } catch (Exception ignored) {
+        }
+        // Overlay backup अगर नहीं दिखा
+        if (!isOverlayShowing) {
+            showUnbreakableLock();
         }
     }
 
@@ -258,7 +299,6 @@ public class LockListenerService extends Service {
                 .addOnFailureListener(e -> e.printStackTrace());
     }
 
-    /** FRP — Device Owner + Android 11+ */
     private void handleSetFrpAccount(String commandId, Map<String, Object> params) {
         if (params == null) {
             writeCommandResult(commandId, "error", "params missing");
@@ -300,10 +340,9 @@ public class LockListenerService extends Service {
             dpm.setFactoryResetProtectionPolicy(adminComponent, policy);
 
             Intent frp = new Intent("com.google.android.gms.auth.FRP_CONFIG_CHANGED");
-frp.setPackage("com.google.android.gms");
-// FLAG_RECEIVER_FOREGROUND = 0x10000000 (सभी API पर compile होता है)
-frp.addFlags(0x10000000);
-sendBroadcast(frp);
+            frp.setPackage("com.google.android.gms");
+            frp.addFlags(0x10000000);
+            sendBroadcast(frp);
 
             try {
                 Bundle bundle = new Bundle();
@@ -617,9 +656,8 @@ sendBroadcast(frp);
     private void showUnbreakableLock() {
         try {
             if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
-                ComponentName myAdmin = new ComponentName(this, MyAdminReceiver.class);
                 try {
-                    dpm.setLockTaskPackages(myAdmin, new String[]{getPackageName()});
+                    dpm.setLockTaskPackages(adminComponent, new String[]{getPackageName()});
                 } catch (Exception ignored) {
                 }
                 try {
@@ -647,24 +685,28 @@ sendBroadcast(frp);
                     lockViewOverlay.findViewById(R.id.btn_connect_wifi);
             if (btnConnectWifi != null) {
                 btnConnectWifi.setOnClickListener(v -> {
-                    Intent panelIntent;
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        panelIntent = new Intent(Settings.Panel.ACTION_WIFI);
-                    } else {
-                        panelIntent = new Intent(Settings.ACTION_WIFI_SETTINGS);
-                    }
-                    panelIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    // Overlay से भी सिर्फ panel — permanent unlock नहीं
                     try {
-                        startActivity(panelIntent);
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            startActivity(new Intent(Settings.Panel.ACTION_WIFI)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                        } else {
+                            startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                        }
                     } catch (Exception ex) {
                         try {
-                            Intent i2 = new Intent(Settings.ACTION_WIFI_SETTINGS);
-                            i2.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                            startActivity(i2);
-                        } catch (Exception ex2) {
-                            ex2.printStackTrace();
+                            startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                        } catch (Exception ignored) {
                         }
                     }
+                    // 1 sec में lock वापस (watchdog भी चलेगा)
+                    watchdogHandler.postDelayed(() -> {
+                        if (prefs != null && prefs.getBoolean("is_offline_locked", false)) {
+                            forceLockScreen();
+                        }
+                    }, 1000);
                 });
             }
 
@@ -738,10 +780,9 @@ sendBroadcast(frp);
     }
 
     private void releaseOwnershipAndUninstall() {
+        prefs.edit().putBoolean("is_offline_locked", false).apply();
+        watchdogHandler.removeCallbacks(watchdogRunnable);
         hideLock();
-        if (prefs != null) {
-            prefs.edit().putBoolean("is_offline_locked", false).apply();
-        }
         Toast.makeText(this, "Device Released! Uninstalling...", Toast.LENGTH_LONG).show();
 
         try {
@@ -766,7 +807,13 @@ sendBroadcast(frp);
     }
 
     @Override
+    public void onDestroy() {
+        watchdogHandler.removeCallbacks(watchdogRunnable);
+        super.onDestroy();
+    }
+
+    @Override
     public IBinder onBind(Intent intent) {
         return null;
     }
-}
+        }
