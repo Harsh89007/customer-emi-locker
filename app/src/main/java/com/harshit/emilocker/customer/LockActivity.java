@@ -372,7 +372,32 @@ public class LockActivity extends Activity {
 
     private void openWifiSafely() {
         startWifiSession();
-        enterKioskWithSettings();
+
+        // 1) Temporarily leave pure kiosk so Settings can open (Device Owner requirement)
+        try {
+            if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
+                dpm.setLockTaskPackages(adminComponent, new String[]{
+                        getPackageName(),
+                        "com.android.settings",
+                        "com.android.settings.intelligence",
+                        "com.samsung.android.settings",
+                        "com.samsung.android.lool",
+                        "com.miui.securitycenter",
+                        "com.miui.home",
+                        "com.android.systemui",
+                        "com.android.phone",
+                        "com.android.networkstack.tethering",
+                        "com.google.android.permissioncontroller",
+                        "com.android.permissioncontroller"
+                });
+                try {
+                    stopLockTask(); // critical: allow leaving lock task to open Wi-Fi UI
+                } catch (Exception ignored) {
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "pre-wifi kiosk: " + e.getMessage());
+        }
 
         handler.postDelayed(() -> {
             boolean opened = tryOpenWifiUi();
@@ -380,14 +405,16 @@ public class LockActivity extends Activity {
                 clearWifiSession();
                 enterKioskStrict();
                 Toast.makeText(this,
-                        "Wi-Fi settings nahi khuli.",
+                        "Wi-Fi settings nahi khuli. Settings se manually try karein.",
                         Toast.LENGTH_LONG).show();
                 return;
             }
             Toast.makeText(this,
                     "Wi-Fi jodo (60 sec). Wapas aane par lock lagega.",
                     Toast.LENGTH_LONG).show();
-        }, 300);
+            // Soft re-enter kiosk WITH settings allowed so user can stay in Wi-Fi screen
+            enterKioskWithSettings();
+        }, 400);
 
         handler.postDelayed(() -> {
             if (!allowExit && isStillLocked()) {
@@ -399,13 +426,19 @@ public class LockActivity extends Activity {
     }
 
     private boolean tryOpenWifiUi() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            if (startIntentSafe(new Intent(Settings.Panel.ACTION_WIFI))) return true;
-            if (startIntentSafe(new Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY))) return true;
-        }
+        // Prefer full Wi-Fi settings (more reliable under DO than Panel on many OEMs)
         Intent wifi = new Intent(Settings.ACTION_WIFI_SETTINGS);
-        wifi.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        wifi.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_ACTIVITY_CLEAR_TOP
+                | Intent.FLAG_ACTIVITY_NO_HISTORY);
         if (startIntentSafe(wifi)) return true;
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (startIntentSafe(new Intent(Settings.Panel.ACTION_WIFI)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))) return true;
+            if (startIntentSafe(new Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))) return true;
+        }
 
         Intent wireless = new Intent(Settings.ACTION_WIRELESS_SETTINGS);
         wireless.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -418,7 +451,6 @@ public class LockActivity extends Activity {
 
     private boolean startIntentSafe(Intent intent) {
         try {
-            if (intent.resolveActivity(getPackageManager()) == null) return false;
             startActivity(intent);
             return true;
         } catch (Exception e) {
@@ -494,18 +526,51 @@ public class LockActivity extends Activity {
     }
 
     private void fetchDealerQRCode(String dealerUid) {
+        if (dealerUid == null || dealerUid.isEmpty()) {
+            tryAdminPaymentQr();
+            return;
+        }
+        // Cache for next open
+        prefs.edit().putString("dealer_uid", dealerUid).apply();
+
         FirebaseFirestore.getInstance().collection("Dealers").document(dealerUid)
                 .get()
                 .addOnSuccessListener(documentSnapshot -> {
-                    if (documentSnapshot.exists()) {
+                    if (documentSnapshot != null && documentSnapshot.exists()) {
                         String dealerUpi = documentSnapshot.getString("upi_id");
+                        if (dealerUpi == null || dealerUpi.isEmpty()) {
+                            dealerUpi = documentSnapshot.getString("upi");
+                        }
                         if (dealerUpi != null && !dealerUpi.isEmpty()) {
                             generateQRCode(dealerUpi);
+                            return;
+                        }
+                    }
+                    // Dealer doc me UPI nahi → admin fallback
+                    tryAdminPaymentQr();
+                })
+                .addOnFailureListener(e -> {
+                    Log.e(TAG, "Failed to load dealer UPI: " + e.getMessage());
+                    tryAdminPaymentQr();
+                });
+    }
+
+    /** Fallback: AdminSettings/PaymentInfo (old path used by overlay) */
+    private void tryAdminPaymentQr() {
+        FirebaseFirestore.getInstance().collection("AdminSettings").document("PaymentInfo")
+                .get()
+                .addOnSuccessListener(doc -> {
+                    if (doc != null && doc.exists()) {
+                        String upi = doc.getString("upi_id");
+                        if (upi == null || upi.isEmpty()) upi = doc.getString("upi");
+                        if (upi != null && !upi.isEmpty()) {
+                            generateQRCode(upi);
+                        } else {
+                            Log.e(TAG, "No upi_id in AdminSettings/PaymentInfo");
                         }
                     }
                 })
-                .addOnFailureListener(e ->
-                        Log.e(TAG, "Failed to load dealer UPI: " + e.getMessage()));
+                .addOnFailureListener(e -> Log.e(TAG, "Admin UPI fail: " + e.getMessage()));
     }
 
     private void generateQRCode(String upiId) {
@@ -536,4 +601,4 @@ public class LockActivity extends Activity {
         }
         super.onDestroy();
     }
-        }
+}
