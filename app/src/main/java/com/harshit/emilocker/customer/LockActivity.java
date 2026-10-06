@@ -351,17 +351,31 @@ public class LockActivity extends Activity {
     private void enterKioskWithSettings() {
         try {
             if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
+                // Only Settings + SystemUI — NOT launcher/home (so phone stays locked)
                 dpm.setLockTaskPackages(adminComponent, new String[]{
                         getPackageName(),
                         "com.android.settings",
                         "com.android.settings.intelligence",
+                        "com.android.systemui",
+                        "com.android.phone",
+                        "com.android.permissioncontroller",
+                        "com.google.android.permissioncontroller",
+                        // Samsung
                         "com.samsung.android.settings",
                         "com.samsung.android.lool",
+                        // Xiaomi / MIUI
                         "com.miui.securitycenter",
-                        "com.android.systemui",
-                        "com.google.android.permissioncontroller",
-                        "com.android.permissioncontroller",
-                        "com.android.phone"
+                        "com.android.settings.wifi",
+                        // Oppo / Realme / ColorOS / OnePlus
+                        "com.coloros.settings",
+                        "com.oppo.settings",
+                        "com.oplus.settings",
+                        "com.oplus.wirelesssettings",
+                        "com.coloros.wirelesssettings",
+                        // Vivo / Funtouch / Origin
+                        "com.android.bbksettings",
+                        "com.vivo.settings",
+                        "com.iqoo.settings"
                 });
                 startLockTask();
             }
@@ -370,34 +384,14 @@ public class LockActivity extends Activity {
         }
     }
 
+    /**
+     * CRITICAL: NEVER call stopLockTask() here.
+     * That opens full home screen (chaos). Stay inside Lock Task Mode,
+     * only allow Settings packages, open Wi-Fi UI, and on back → strict lock.
+     */
     private void openWifiSafely() {
         startWifiSession();
-
-        // 1) Temporarily leave pure kiosk so Settings can open (Device Owner requirement)
-        try {
-            if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
-                dpm.setLockTaskPackages(adminComponent, new String[]{
-                        getPackageName(),
-                        "com.android.settings",
-                        "com.android.settings.intelligence",
-                        "com.samsung.android.settings",
-                        "com.samsung.android.lool",
-                        "com.miui.securitycenter",
-                        "com.miui.home",
-                        "com.android.systemui",
-                        "com.android.phone",
-                        "com.android.networkstack.tethering",
-                        "com.google.android.permissioncontroller",
-                        "com.android.permissioncontroller"
-                });
-                try {
-                    stopLockTask(); // critical: allow leaving lock task to open Wi-Fi UI
-                } catch (Exception ignored) {
-                }
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "pre-wifi kiosk: " + e.getMessage());
-        }
+        enterKioskWithSettings(); // still IN lock-task, Settings allowed
 
         handler.postDelayed(() -> {
             boolean opened = tryOpenWifiUi();
@@ -405,58 +399,67 @@ public class LockActivity extends Activity {
                 clearWifiSession();
                 enterKioskStrict();
                 Toast.makeText(this,
-                        "Wi-Fi settings nahi khuli. Settings se manually try karein.",
+                        "Wi-Fi window nahi khuli.",
                         Toast.LENGTH_LONG).show();
                 return;
             }
             Toast.makeText(this,
-                    "Wi-Fi jodo (60 sec). Wapas aane par lock lagega.",
+                    "Sirf Wi-Fi jodo. Back dabate hi lock lag jayega.",
                     Toast.LENGTH_LONG).show();
-            // Soft re-enter kiosk WITH settings allowed so user can stay in Wi-Fi screen
-            enterKioskWithSettings();
-        }, 400);
+        }, 200);
 
+        // Safety net: even if user stays in Settings, after 60s force strict lock
         handler.postDelayed(() -> {
             if (!allowExit && isStillLocked()) {
                 clearWifiSession();
                 enterKioskStrict();
                 bringLockBack();
+                try {
+                    if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
+                        dpm.lockNow();
+                    }
+                } catch (Exception ignored) {
+                }
             }
         }, WIFI_SESSION_MS);
     }
 
     private boolean tryOpenWifiUi() {
-        // Prefer full Wi-Fi settings (more reliable under DO than Panel on many OEMs)
-        Intent wifi = new Intent(Settings.ACTION_WIFI_SETTINGS);
-        wifi.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
-                | Intent.FLAG_ACTIVITY_CLEAR_TOP
-                | Intent.FLAG_ACTIVITY_NO_HISTORY);
-        if (startIntentSafe(wifi)) return true;
-
+        // 1) System Wi-Fi panel (smallest window, Android 10+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            if (startIntentSafe(new Intent(Settings.Panel.ACTION_WIFI)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))) return true;
-            if (startIntentSafe(new Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))) return true;
+            try {
+                Intent panel = new Intent(Settings.Panel.ACTION_WIFI);
+                startActivity(panel);
+                return true;
+            } catch (Exception e) {
+                Log.e(TAG, "panel wifi: " + e.getMessage());
+            }
+            try {
+                Intent panel2 = new Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY);
+                startActivity(panel2);
+                return true;
+            } catch (Exception ignored) {
+            }
         }
 
-        Intent wireless = new Intent(Settings.ACTION_WIRELESS_SETTINGS);
-        wireless.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        if (startIntentSafe(wireless)) return true;
-
-        Intent settings = new Intent(Settings.ACTION_SETTINGS);
-        settings.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        return startIntentSafe(settings);
-    }
-
-    private boolean startIntentSafe(Intent intent) {
+        // 2) Wi-Fi settings only (not full settings home)
         try {
-            startActivity(intent);
+            Intent wifi = new Intent(Settings.ACTION_WIFI_SETTINGS);
+            wifi.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(wifi);
             return true;
         } catch (Exception e) {
-            Log.e(TAG, "startIntent: " + e.getMessage());
-            return false;
+            Log.e(TAG, "wifi settings: " + e.getMessage());
         }
+
+        try {
+            Intent wireless = new Intent(Settings.ACTION_WIRELESS_SETTINGS);
+            wireless.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(wireless);
+            return true;
+        } catch (Exception ignored) {
+        }
+        return false;
     }
 
     private boolean isStillLocked() {
@@ -482,11 +485,26 @@ public class LockActivity extends Activity {
         super.onResume();
         if (allowExit) return;
         markLockVisible(true);
-        if (isStillLocked() && !isWifiSessionActive()) {
+
+        if (!isStillLocked()) return;
+
+        // User pressed Back from Wi-Fi / left Settings → lock IMMEDIATELY
+        // (even if 60s window still active — tighter security)
+        if (!isWifiSessionActive()) {
             clearWifiSession();
             enterKioskStrict();
-        } else if (isStillLocked() && isWifiSessionActive()) {
-            enterKioskWithSettings();
+            return;
+        }
+
+        // Still inside Wi-Fi session but returned to LockActivity (Back pressed)
+        // → end session early and strict lock so they cannot roam
+        clearWifiSession();
+        enterKioskStrict();
+        try {
+            if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
+                dpm.lockNow();
+            }
+        } catch (Exception ignored) {
         }
     }
 
@@ -495,27 +513,39 @@ public class LockActivity extends Activity {
         super.onPause();
         if (allowExit) return;
         markLockVisible(false);
-        if (isWifiSessionActive()) return;
+        // While Wi-Fi window is open, stay soft; when session ends or user flees → lock fast
         if (isStillLocked()) {
             handler.postDelayed(() -> {
-                if (!allowExit && isStillLocked() && !isWifiSessionActive()) {
+                if (allowExit) return;
+                if (!isStillLocked()) return;
+                // If still in wifi session and Settings is front, OK
+                // If lock not visible and session over → force
+                if (!isWifiSessionActive()) {
+                    enterKioskStrict();
                     bringLockBack();
                 }
-            }, 2500);
+            }, 1200);
         }
     }
 
     @Override
     protected void onUserLeaveHint() {
         super.onUserLeaveHint();
-        if (allowExit || isWifiSessionActive()) return;
-        if (isStillLocked()) {
-            handler.postDelayed(() -> {
-                if (!allowExit && isStillLocked() && !isWifiSessionActive()) {
-                    bringLockBack();
+        if (allowExit) return;
+        if (!isStillLocked()) return;
+        // Power button / Home attempt — bring lock back quickly
+        handler.postDelayed(() -> {
+            if (allowExit || !isStillLocked()) return;
+            clearWifiSession();
+            enterKioskStrict();
+            bringLockBack();
+            try {
+                if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
+                    dpm.lockNow();
                 }
-            }, 2000);
-        }
+            } catch (Exception ignored) {
+            }
+        }, 800);
     }
 
     @Override
