@@ -29,13 +29,15 @@ import com.journeyapps.barcodescanner.BarcodeEncoder;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 /**
- * Lock screen:
- * - Codes NOT shown (dealer panel only)
- * - Customer enters offline code to unlock
- * - Wi-Fi 60s session with expanded lock-task allowlist
+ * Lock screen — MUST use same prefs as LockListenerService + MainActivity:
+ * DeviceProtectedStorage + "AppPrefs" + key "session_id"
+ *
+ * Fixes:
+ * - Offline code: any of 6 dealer codes from AppPrefs unlock_codes_display
+ * - Dealer unlock: force_unlock via onCreate + onNewIntent
+ * - Firestore is_locked=false listener unlock
  */
 public class LockActivity extends Activity {
     private static final String TAG = "LockActivity";
@@ -51,25 +53,24 @@ public class LockActivity extends Activity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private SharedPreferences prefs;
     private final List<String> validCodes = new ArrayList<>();
+    private String sessionId;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        prefs = getSharedPreferences("EmiLockerPrefs", MODE_PRIVATE);
-
-        if (getIntent() != null && getIntent().getBooleanExtra("force_unlock", false)) {
-            allowExit = true;
-            clearWifiSession();
+        // SAME prefs as LockListenerService / MainActivity (critical!)
+        Context deviceContext = this;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             try {
-                DevicePolicyManager dpmLocal =
-                        (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
-                if (dpmLocal != null && dpmLocal.isDeviceOwnerApp(getPackageName())) {
-                    stopLockTask();
-                }
+                deviceContext = createDeviceProtectedStorageContext();
             } catch (Exception ignored) {
             }
-            finish();
+        }
+        prefs = deviceContext.getSharedPreferences("AppPrefs", MODE_PRIVATE);
+        sessionId = prefs.getString("session_id", null);
+
+        if (handleForceUnlock(getIntent())) {
             return;
         }
 
@@ -113,41 +114,73 @@ public class LockActivity extends Activity {
             btnSubmitCode.setOnClickListener(v -> tryOfflineUnlock());
         }
 
-        // Firestore: lock state + refresh codes (local only, not shown) + UPI
-        String customerId = prefs.getString("customer_id", null);
-        String dealerUid = prefs.getString("dealer_uid", null);
-
-        if (customerId != null && !customerId.isEmpty()) {
+        // Live Firestore: unlock when dealer presses Unlock + refresh codes
+        if (sessionId != null && !sessionId.isEmpty()) {
             listener = FirebaseFirestore.getInstance()
                     .collection("Customers")
-                    .document(customerId)
+                    .document(sessionId)
                     .addSnapshotListener((snapshot, error) -> {
                         if (error != null || snapshot == null || !snapshot.exists()) return;
                         try {
                             Boolean locked = snapshot.getBoolean("is_locked");
                             if (locked != null && !locked) {
-                                unlockAndClose();
+                                // Dealer unlocked from panel
+                                performFullUnlock();
                                 return;
                             }
                             Object codes = snapshot.get("unlock_codes");
                             if (codes instanceof List) {
                                 cacheCodesFromList((List<?>) codes);
                             }
-                            if (dealerUid == null || dealerUid.isEmpty()) {
-                                String d = snapshot.getString("dealer_uid");
-                                if (d != null) fetchDealerQRCode(d);
+                            String dealerUid = snapshot.getString("dealer_uid");
+                            if (dealerUid == null) {
+                                dealerUid = snapshot.getString("dealerId");
+                            }
+                            if (dealerUid != null && !dealerUid.isEmpty()) {
+                                fetchDealerQRCode(dealerUid);
                             }
                         } catch (Exception e) {
                             Log.e(TAG, "listener: " + e.getMessage());
                         }
                     });
+        } else {
+            Log.e(TAG, "session_id missing — offline codes / dealer unlock limited");
         }
 
+        // UPI from local dealer_uid if any
+        String dealerUid = prefs.getString("dealer_uid", null);
         if (dealerUid != null && !dealerUid.isEmpty()) {
             fetchDealerQRCode(dealerUid);
         }
 
         markLockVisible(true);
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleForceUnlock(intent);
+    }
+
+    /** Returns true if activity should finish (force unlock). */
+    private boolean handleForceUnlock(Intent intent) {
+        if (intent != null && intent.getBooleanExtra("force_unlock", false)) {
+            allowExit = true;
+            clearWifiSession();
+            markLockVisible(false);
+            try {
+                DevicePolicyManager dpmLocal =
+                        (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
+                if (dpmLocal != null && dpmLocal.isDeviceOwnerApp(getPackageName())) {
+                    stopLockTask();
+                }
+            } catch (Exception ignored) {
+            }
+            finish();
+            return true;
+        }
+        return false;
     }
 
     private void loadValidCodesFromPrefs() {
@@ -158,6 +191,7 @@ public class LockActivity extends Activity {
             String c = part.trim();
             if (c.length() >= 4) validCodes.add(c);
         }
+        Log.d(TAG, "Loaded " + validCodes.size() + " offline codes from prefs");
     }
 
     private void cacheCodesFromList(List<?> list) {
@@ -169,16 +203,19 @@ public class LockActivity extends Activity {
             String c = String.valueOf(o).trim();
             if (c.isEmpty()) continue;
             validCodes.add(c);
-            if (i > 0) display.append(i % 3 == 0 ? "\n" : "  ");
+            if (i > 0) display.append(i % 3 == 0 ? "\n" : "   ");
             display.append(c);
             i++;
         }
         if (display.length() > 0) {
             prefs.edit().putString("unlock_codes_display", display.toString()).apply();
         }
+        Log.d(TAG, "Cached " + validCodes.size() + " codes from Firestore");
     }
 
-    /** Customer types code from dealer — never shown on this screen */
+    /**
+     * Customer enters ANY ONE of the 6 codes shown on dealer panel.
+     */
     private void tryOfflineUnlock() {
         if (etUnlockCode == null) return;
         String input = etUnlockCode.getText() != null
@@ -188,39 +225,91 @@ public class LockActivity extends Activity {
             return;
         }
 
-        if (validCodes.isEmpty()) loadValidCodesFromPrefs();
+        // Always refresh from prefs (same AppPrefs as listener)
+        loadValidCodesFromPrefs();
 
+        // If still empty, try one-shot Firestore fetch
+        if (validCodes.isEmpty() && sessionId != null) {
+            try {
+                FirebaseFirestore.getInstance().collection("Customers").document(sessionId)
+                        .get()
+                        .addOnSuccessListener(snap -> {
+                            if (snap != null && snap.exists()) {
+                                Object codes = snap.get("unlock_codes");
+                                if (codes instanceof List) {
+                                    cacheCodesFromList((List<?>) codes);
+                                }
+                            }
+                            verifyAndUnlock(input);
+                        })
+                        .addOnFailureListener(e -> verifyAndUnlock(input));
+                return;
+            } catch (Exception e) {
+                Log.e(TAG, "fetch codes: " + e.getMessage());
+            }
+        }
+
+        verifyAndUnlock(input);
+    }
+
+    private void verifyAndUnlock(String input) {
         boolean match = false;
         for (String c : validCodes) {
-            if (c.equalsIgnoreCase(input) || c.replace(" ", "").equalsIgnoreCase(input)) {
+            if (c.equals(input) || c.replace(" ", "").equals(input)) {
                 match = true;
                 break;
             }
         }
 
         if (!match) {
-            Toast.makeText(this, "Galat code", Toast.LENGTH_SHORT).show();
-            etUnlockCode.setText("");
+            Toast.makeText(this,
+                    "Galat code (dealer panel ke 6 codes me se koi ek dalo)",
+                    Toast.LENGTH_LONG).show();
+            if (etUnlockCode != null) etUnlockCode.setText("");
             return;
         }
 
-        // Offline unlock success
+        Toast.makeText(this, "Code sahi — Unlocking...", Toast.LENGTH_SHORT).show();
+        performFullUnlock();
+    }
+
+    /** Full unlock: prefs + Firestore + stop kiosk + finish */
+    private void performFullUnlock() {
+        if (allowExit) return;
+        allowExit = true;
+
         prefs.edit()
                 .putBoolean("is_offline_locked", false)
-                .putBoolean("is_locked", false)
+                .putLong("wifi_session_until", 0L)
+                .remove("unlock_codes_display")
                 .apply();
 
-        String customerId = prefs.getString("customer_id", null);
-        if (customerId != null && !customerId.isEmpty()) {
+        if (sessionId != null && !sessionId.isEmpty()) {
             try {
-                FirebaseFirestore.getInstance().collection("Customers").document(customerId)
+                FirebaseFirestore.getInstance()
+                        .collection("Customers")
+                        .document(sessionId)
                         .update("is_locked", false);
             } catch (Exception ignored) {
             }
         }
 
-        Toast.makeText(this, "Unlocked!", Toast.LENGTH_SHORT).show();
-        unlockAndClose();
+        markLockVisible(false);
+        clearWifiSession();
+
+        try {
+            if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
+                stopLockTask();
+            }
+        } catch (Exception ignored) {
+        }
+
+        if (listener != null) {
+            listener.remove();
+            listener = null;
+        }
+
+        finish();
     }
 
     private void markLockVisible(boolean visible) {
@@ -259,7 +348,6 @@ public class LockActivity extends Activity {
         }
     }
 
-    /** Allow Settings / SystemUI so Wi-Fi panel can open under Device Owner */
     private void enterKioskWithSettings() {
         try {
             if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
@@ -270,13 +358,10 @@ public class LockActivity extends Activity {
                         "com.samsung.android.settings",
                         "com.samsung.android.lool",
                         "com.miui.securitycenter",
-                        "com.miui.home",
                         "com.android.systemui",
                         "com.google.android.permissioncontroller",
                         "com.android.permissioncontroller",
-                        "com.android.networkstack.tethering",
-                        "com.android.phone",
-                        "com.android.systemui.qs"
+                        "com.android.phone"
                 });
                 startLockTask();
             }
@@ -289,14 +374,13 @@ public class LockActivity extends Activity {
         startWifiSession();
         enterKioskWithSettings();
 
-        // Small delay so lock-task packages apply before opening Settings
         handler.postDelayed(() -> {
             boolean opened = tryOpenWifiUi();
             if (!opened) {
                 clearWifiSession();
                 enterKioskStrict();
                 Toast.makeText(this,
-                        "Wi-Fi settings nahi khuli. Settings se manually Wi-Fi on karein.",
+                        "Wi-Fi settings nahi khuli.",
                         Toast.LENGTH_LONG).show();
                 return;
             }
@@ -315,22 +399,18 @@ public class LockActivity extends Activity {
     }
 
     private boolean tryOpenWifiUi() {
-        // 1) Android 10+ system Wi-Fi panel (best)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             if (startIntentSafe(new Intent(Settings.Panel.ACTION_WIFI))) return true;
             if (startIntentSafe(new Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY))) return true;
         }
-        // 2) Full Wi-Fi settings
         Intent wifi = new Intent(Settings.ACTION_WIFI_SETTINGS);
         wifi.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         if (startIntentSafe(wifi)) return true;
 
-        // 3) Wireless settings
         Intent wireless = new Intent(Settings.ACTION_WIRELESS_SETTINGS);
         wireless.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         if (startIntentSafe(wireless)) return true;
 
-        // 4) Generic settings
         Intent settings = new Intent(Settings.ACTION_SETTINGS);
         settings.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         return startIntentSafe(settings);
@@ -368,6 +448,7 @@ public class LockActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        if (allowExit) return;
         markLockVisible(true);
         if (isStillLocked() && !isWifiSessionActive()) {
             clearWifiSession();
@@ -380,11 +461,12 @@ public class LockActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        if (allowExit) return;
         markLockVisible(false);
-        if (allowExit || isWifiSessionActive()) return;
+        if (isWifiSessionActive()) return;
         if (isStillLocked()) {
             handler.postDelayed(() -> {
-                if (isStillLocked() && !isWifiSessionActive()) {
+                if (!allowExit && isStillLocked() && !isWifiSessionActive()) {
                     bringLockBack();
                 }
             }, 2500);
@@ -397,7 +479,7 @@ public class LockActivity extends Activity {
         if (allowExit || isWifiSessionActive()) return;
         if (isStillLocked()) {
             handler.postDelayed(() -> {
-                if (isStillLocked() && !isWifiSessionActive()) {
+                if (!allowExit && isStillLocked() && !isWifiSessionActive()) {
                     bringLockBack();
                 }
             }, 2000);
@@ -406,8 +488,9 @@ public class LockActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        // block back while locked
-        if (allowExit) super.onBackPressed();
+        if (allowExit) {
+            super.onBackPressed();
+        }
     }
 
     private void fetchDealerQRCode(String dealerUid) {
@@ -441,23 +524,6 @@ public class LockActivity extends Activity {
         }
     }
 
-    private void unlockAndClose() {
-        allowExit = true;
-        clearWifiSession();
-        markLockVisible(false);
-        try {
-            if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
-                stopLockTask();
-            }
-        } catch (Exception ignored) {
-        }
-        if (listener != null) {
-            listener.remove();
-            listener = null;
-        }
-        finish();
-    }
-
     @Override
     protected void onDestroy() {
         handler.removeCallbacksAndMessages(null);
@@ -465,7 +531,9 @@ public class LockActivity extends Activity {
             listener.remove();
             listener = null;
         }
-        markLockVisible(false);
+        if (!allowExit) {
+            markLockVisible(false);
+        }
         super.onDestroy();
     }
-   }
+        }
