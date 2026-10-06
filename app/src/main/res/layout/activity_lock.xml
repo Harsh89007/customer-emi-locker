@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:background="#0B1F3A">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:padding="20dp">
+
+        <!-- Top brand bar -->
+        <TextView
+            android:id="@+id/tv_brand"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Kings EMI Locker"
+            android:textColor="#38BDF8"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:paddingTop="8dp"
+            android:paddingBottom="4dp" />
+
+        <ImageView
+            android:layout_width="72dp"
+            android:layout_height="72dp"
+            android:src="@drawable/ic_app_logo"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="12dp"
+            android:contentDescription="@null" />
+
+        <TextView
+            android:id="@+id/tv_lock_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="DEVICE LOCKED"
+            android:textColor="#FFFFFF"
+            android:textSize="26sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:letterSpacing="0.05" />
+
+        <TextView
+            android:id="@+id/tv_lock_message"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="आपकी EMI बकाया है। भुगतान करने के बाद डीलर से अनलॉक करवाएँ। बिना अनुमति फोन उपयोग नहीं कर सकते।"
+            android:textColor="#CBD5E1"
+            android:textSize="14sp"
+            android:gravity="center"
+            android:lineSpacingExtra="3dp"
+            android:paddingLeft="8dp"
+            android:paddingRight="8dp" />
+
+        <!-- Unlock codes section (6 codes like reference) -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="Emergency Unlock Codes"
+            android:textColor="#94A3B8"
+            android:textSize="12sp"
+            android:gravity="center" />
+
+        <TextView
+            android:id="@+id/tv_unlock_codes"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="------  ------  ------\n------  ------  ------"
+            android:textColor="#E2E8F0"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:letterSpacing="0.08"
+            android:background="#132743"
+            android:padding="14dp"
+            android:fontFamily="monospace" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="ये कोड डीलर पैनल में भी दिखते हैं"
+            android:textColor="#64748B"
+            android:textSize="11sp"
+            android:gravity="center" />
+
+        <!-- QR -->
+        <ImageView
+            android:id="@+id/qr_code_image"
+            android:layout_width="200dp"
+            android:layout_height="200dp"
+            android:layout_marginTop="18dp"
+            android:background="#FFFFFF"
+            android:padding="10dp"
+            android:contentDescription="@null" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="UPI से भुगतान स्कैन करें"
+            android:textColor="#94A3B8"
+            android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/btn_connect_wifi"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="22dp"
+            android:layout_marginBottom="24dp"
+            android:text="Connect Wi‑Fi (60 sec)"
+            android:textColor="#0B1F3A"
+            android:textStyle="bold"
+            android:textSize="15sp"
+            android:backgroundTint="#38BDF8" />
+    </LinearLayout>
+</ScrollView>
