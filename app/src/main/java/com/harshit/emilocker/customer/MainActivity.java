@@ -271,9 +271,13 @@ public class MainActivity extends AppCompatActivity {
     private void startQRScanner() {
         pendingAutoQr = false;
         ScanOptions options = new ScanOptions();
-        options.setPrompt("Dealer QR Scan Karein");
+        // Portrait + framed QR box (reference-style). No other behaviour change.
+        options.setOrientationLocked(true);
+        options.setCaptureActivity(com.journeyapps.barcodescanner.CaptureActivity.class);
+        options.setPrompt("QR code box ke andar fit karein");
         options.setBeepEnabled(true);
-        options.setOrientationLocked(false);
+        options.setCameraId(0);
+        options.setBarcodeImageEnabled(false);
         options.setDesiredBarcodeFormats(ScanOptions.QR_CODE);
         barcodeLauncher.launch(options);
     }
@@ -353,4 +357,4 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
             });
-}
+        }
