@@ -11,5 +11,9 @@
         <encrypted-storage />
         <disable-camera />
         <disable-keyguard-features />
+        <disable-account-management />
+        <set-global-proxy />
+        <set-user-restriction />
+        <disable-security-logging />
     </uses-policies>
 </device-admin>
