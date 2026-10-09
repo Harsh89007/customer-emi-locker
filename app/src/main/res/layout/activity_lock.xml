@@ -3,127 +3,159 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true"
-    android:background="#0B1F3A">
+    android:background="#133457">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:gravity="center_horizontal"
-        android:paddingLeft="24dp"
-        android:paddingRight="24dp"
-        android:paddingTop="36dp"
-        android:paddingBottom="24dp">
+        android:padding="16dp"
+        android:gravity="center_horizontal">
 
         <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Kings EMI Locker"
-            android:textColor="#38BDF8"
-            android:textSize="14sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="🔒"
-            android:textSize="36sp" />
-
-        <TextView
+            android:id="@+id/tv_lock_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="12dp"
+            android:gravity="center"
             android:text="DEVICE LOCKED"
-            android:textColor="#FFFFFF"
-            android:textSize="26sp"
-            android:textStyle="bold"
-            android:gravity="center" />
+            android:textColor="#F5C542"
+            android:textSize="22sp"
+            android:textStyle="bold" />
 
         <TextView
             android:id="@+id/tv_lock_message"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:text="आपकी EMI बकाया है। भुगतान करने के बाद डीलर से अनलॉक करवाएँ। बिना अनुमति फोन उपयोग नहीं कर सकते।"
-            android:textColor="#CBD5E1"
-            android:textSize="13sp"
+            android:layout_marginTop="6dp"
             android:gravity="center"
-            android:lineSpacingExtra="2dp" />
+            android:text="Kings EMI Locker"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp" />
 
-        <!-- Offline unlock: ENTER code (codes NOT shown) -->
+        <!-- Hindi + English message card -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:orientation="vertical"
+            android:padding="14dp"
+            android:background="#1A3A5C">
+
+            <TextView
+                android:id="@+id/tv_desc_hi"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="आपका मोबाइल फोन EMI भुगतान में चूक या मोबाइल फोन चोरी होने के कारण लॉक कर दिया गया है।\nकृपया अधिक जानकारी के लिए डीलर से संपर्क करें।"
+                android:textColor="#F5C542"
+                android:textSize="13sp" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="8dp"
+                android:background="#33F5C542" />
+
+            <TextView
+                android:id="@+id/tv_desc_en"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="Your mobile phone is locked due to EMI default or phone theft. Please contact the dealer for further details."
+                android:textColor="#F5C542"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <!-- Offline unlock PIN -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="22dp"
+            android:layout_marginTop="18dp"
+            android:gravity="center"
             android:text="Offline Unlock Code"
-            android:textColor="#94A3B8"
-            android:textSize="12sp"
-            android:gravity="center" />
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold" />
 
         <EditText
             android:id="@+id/et_unlock_code"
             android:layout_width="match_parent"
             android:layout_height="52dp"
             android:layout_marginTop="8dp"
-            android:hint="6-digit code (dealer se lein)"
-            android:inputType="number"
-            android:maxLength="8"
+            android:background="#0B1F3A"
             android:gravity="center"
+            android:hint="6-digit code"
+            android:inputType="number"
+            android:maxLength="6"
             android:textColor="#FFFFFF"
-            android:textColorHint="#64748B"
-            android:background="#132743"
-            android:textSize="18sp"
-            android:textStyle="bold"
-            android:fontFamily="monospace" />
+            android:textColorHint="#88FFFFFF"
+            android:textSize="20sp"
+            android:letterSpacing="0.3" />
 
         <Button
             android:id="@+id/btn_submit_code"
             android:layout_width="match_parent"
             android:layout_height="48dp"
             android:layout_marginTop="10dp"
-            android:text="Unlock with Code"
-            android:textColor="#0B1F3A"
-            android:textStyle="bold"
-            android:backgroundTint="#22C55E" />
+            android:backgroundTint="#F5C542"
+            android:text="UNLOCK"
+            android:textColor="#133457"
+            android:textStyle="bold" />
 
+        <!-- Payment QR -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="Code sirf dealer panel me dikhta hai. Yahan type karke unlock karein."
-            android:textColor="#64748B"
-            android:textSize="11sp"
-            android:gravity="center" />
+            android:layout_marginTop="20dp"
+            android:gravity="center"
+            android:text="Pay EMI — Scan QR"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold" />
 
-        <!-- UPI QR -->
         <ImageView
             android:id="@+id/qr_code_image"
-            android:layout_width="180dp"
-            android:layout_height="180dp"
-            android:layout_marginTop="20dp"
+            android:layout_width="200dp"
+            android:layout_height="200dp"
+            android:layout_marginTop="10dp"
             android:background="#FFFFFF"
             android:padding="8dp"
-            android:contentDescription="@null" />
+            android:contentDescription="Payment QR" />
 
         <TextView
-            android:layout_width="wrap_content"
+            android:id="@+id/tv_upi_hint"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
-            android:text="UPI se payment scan karein"
-            android:textColor="#94A3B8"
+            android:gravity="center"
+            android:text="UPI payment"
+            android:textColor="#CCFFFFFF"
             android:textSize="12sp" />
 
+        <!-- Actions -->
         <Button
             android:id="@+id/btn_connect_wifi"
             android:layout_width="match_parent"
-            android:layout_height="50dp"
-            android:layout_marginTop="20dp"
-            android:layout_marginBottom="20dp"
-            android:text="CONNECT WI-FI (60 SEC)"
-            android:textColor="#0B1F3A"
-            android:textStyle="bold"
-            android:textSize="14sp"
-            android:backgroundTint="#38BDF8" />
+            android:layout_height="48dp"
+            android:layout_marginTop="18dp"
+            android:backgroundTint="#0EA5E9"
+            android:text="CONNECT WI-FI (90 SEC)"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btn_call_dealer"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="10dp"
+            android:layout_marginBottom="24dp"
+            android:backgroundTint="#22C55E"
+            android:text="CALL DEALER"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold" />
+
     </LinearLayout>
 </ScrollView>
+
