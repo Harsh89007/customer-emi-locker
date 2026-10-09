@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Match Ai Locker palette -->
+    <color name="emi_blue">#133457</color>
+    <color name="emi_blue_dark">#0B1F3A</color>
+    <color name="emi_yellow">#F5C542</color>
+    <color name="emi_white">#FFFFFF</color>
+    <color name="emi_red">#EF4444</color>
+    <color name="emi_green">#22C55E</color>
+    <color name="emi_card_stroke">#F5C542</color>
+</resources>
