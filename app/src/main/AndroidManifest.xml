@@ -2,12 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- ===== Core (existing) ===== -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.GET_ACCOUNTS" />
-    <!-- RUNNING DEVICE overlay — DO NOT REMOVE -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -24,8 +22,6 @@
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
-    <!-- ===== Reference-matching (Device Owner strength) ===== -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.REORDER_TASKS" />
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
@@ -43,7 +39,6 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <uses-feature android:name="android.hardware.location" android:required="false" />
-    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 
     <application
         android:allowBackup="false"
@@ -54,14 +49,22 @@
         android:theme="@style/Theme.AppCompat.Light.NoActionBar"
         android:directBootAware="true">
 
+        <!-- Splash = launcher (reference-style) -->
         <activity
-            android:name=".MainActivity"
+            android:name=".SplashActivity"
             android:exported="true"
-            android:screenOrientation="portrait">
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:screenOrientation="portrait">
             <intent-filter>
                 <action android:name="android.app.action.PROVISIONING_SUCCESSFUL" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -76,7 +79,6 @@
             android:turnScreenOn="true"
             android:screenOrientation="portrait" />
 
-        <!-- ZXing scanner portrait -->
         <activity
             android:name="com.journeyapps.barcodescanner.CaptureActivity"
             android:screenOrientation="portrait"
@@ -109,39 +111,27 @@
             </intent-filter>
         </activity>
 
-        <!-- Main lock + command listener (EXISTING — keep) -->
-        <service
-            android:name=".LockListenerService"
-            android:exported="false"
-            android:directBootAware="true"
-            android:foregroundServiceType="dataSync" />
-
-        <!-- Reference-style: warning audio -->
-        <service
-            android:name=".WarningAudioService"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="emi_payment_warning_audio" />
+        <!-- Core + reference-parity services -->
+        <service android:name=".LockListenerService" android:exported="false" android:directBootAware="true" android:foregroundServiceType="dataSync" />
+        <service android:name=".WarningAudioService" android:exported="false" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="emi_warning_audio" />
+        </service>
+        <service android:name=".PreventiveService" android:exported="false" android:directBootAware="true" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="emi_preventive" />
+        </service>
+        <service android:name=".LocationService" android:exported="false" android:foregroundServiceType="location" />
+        <service android:name=".NetworkService" android:exported="false" />
+        <service android:name=".ReminderNotificationService" android:exported="false" />
+        <service android:name=".AppRunningService" android:exported="false" android:directBootAware="true" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="emi_app_running" />
+        </service>
+        <service android:name=".MyFirebaseMessagingService" android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
         </service>
 
-        <!-- Reference-style: preventive keep-alive -->
-        <service
-            android:name=".PreventiveService"
-            android:exported="false"
-            android:directBootAware="true"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="emi_locker_preventive_keepalive" />
-        </service>
-
-        <receiver
-            android:name=".BootReceiver"
-            android:exported="true"
-            android:enabled="true"
-            android:directBootAware="true">
+        <receiver android:name=".BootReceiver" android:exported="true" android:enabled="true" android:directBootAware="true">
             <intent-filter android:priority="999">
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
@@ -151,11 +141,7 @@
             </intent-filter>
         </receiver>
 
-        <!-- SIM / phone state — reference PhoneStatReceiver -->
-        <receiver
-            android:name=".PhoneStatReceiver"
-            android:exported="true"
-            android:enabled="true">
+        <receiver android:name=".PhoneStatReceiver" android:exported="true" android:enabled="true">
             <intent-filter>
                 <action android:name="android.intent.action.SIM_STATE_CHANGED" />
                 <action android:name="android.intent.action.PHONE_STATE" />
@@ -163,23 +149,42 @@
             </intent-filter>
         </receiver>
 
-        <!-- SMS unlock / alert — reference SmsReceiver -->
-        <receiver
-            android:name=".SmsReceiver"
-            android:exported="true"
-            android:permission="android.permission.BROADCAST_SMS">
+        <receiver android:name=".SmsReceiver" android:exported="true" android:permission="android.permission.BROADCAST_SMS">
             <intent-filter android:priority="999">
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
             </intent-filter>
         </receiver>
 
+        <receiver android:name=".FrpChangedReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.accounts.LOGIN_ACCOUNTS_CHANGED" />
+                <action android:name="android.intent.action.USER_PRESENT" />
+            </intent-filter>
+        </receiver>
+
+        <receiver android:name=".GpsLocationReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.location.PROVIDERS_CHANGED" />
+                <action android:name="android.location.MODE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver android:name=".InstallationBroadcast" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_ADDED" />
+                <action android:name="android.intent.action.PACKAGE_REPLACED" />
+                <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
+
+        <receiver android:name=".NotificationDismissReceiver" android:exported="false" />
+        <receiver android:name=".AppForegroundDismissReceiver" android:exported="false" />
+
         <receiver
             android:name=".MyAdminReceiver"
             android:permission="android.permission.BIND_DEVICE_ADMIN"
             android:exported="true">
-            <meta-data
-                android:name="android.app.device_admin"
-                android:resource="@xml/device_admin" />
+            <meta-data android:name="android.app.device_admin" android:resource="@xml/device_admin" />
             <intent-filter>
                 <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
                 <action android:name="android.app.action.PROFILE_PROVISIONING_COMPLETE" />
@@ -188,13 +193,6 @@
             </intent-filter>
         </receiver>
 
-        <service
-            android:name=".MyFirebaseMessagingService"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="com.google.firebase.MESSAGING_EVENT" />
-            </intent-filter>
-        </service>
-
     </application>
 </manifest>
+            
