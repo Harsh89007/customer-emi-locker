@@ -34,6 +34,14 @@ public class BootReceiver extends BroadcastReceiver {
 
         try {
             PreventiveService.start(context);
+        try {
+            Intent run = new Intent(context, AppRunningService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(run);
+            } else {
+                context.startService(run);
+            }
+        } catch (Exception ignored) {}
         } catch (Exception e) {
             Log.e(TAG, "Preventive: " + e.getMessage());
         }
@@ -58,4 +66,5 @@ public class BootReceiver extends BroadcastReceiver {
             Log.e(TAG, "lock after boot: " + e.getMessage());
         }
     }
-}
+                }
+                    
