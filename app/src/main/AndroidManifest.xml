@@ -119,7 +119,8 @@
         <service android:name=".PreventiveService" android:exported="false" android:directBootAware="true" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="emi_preventive" />
         </service>
-        <service android:name=".LocationService" android:exported="false" android:foregroundServiceType="location" />
+        <!-- Location FGS disabled: caused permanent Location notification -->
+        <service android:name=".LocationService" android:exported="false" android:enabled="false" />
         <service android:name=".NetworkService" android:exported="false" />
         <service android:name=".ReminderNotificationService" android:exported="false" />
         <service android:name=".AppRunningService" android:exported="false" android:directBootAware="true" android:foregroundServiceType="specialUse">
@@ -195,4 +196,4 @@
 
     </application>
 </manifest>
-            
+
