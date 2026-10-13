@@ -150,7 +150,10 @@ public class MainActivity extends AppCompatActivity {
                     dpm.setPermissionGrantState(adminComponent, getPackageName(), Manifest.permission.ACCESS_COARSE_LOCATION, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    if (prefs == null || !prefs.getBoolean("bg_loc_granted_once", false)) {
                     dpm.setPermissionGrantState(adminComponent, getPackageName(), Manifest.permission.ACCESS_BACKGROUND_LOCATION, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
+                    if (prefs != null) prefs.edit().putBoolean("bg_loc_granted_once", true).apply();
+                }
                 }
             } catch (Exception e) { 
                 e.printStackTrace(); 
@@ -179,10 +182,15 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         
         // ऐप चालू होते ही बैकग्राउंड में परमिशन को दोबारा फोर्सफुली पुश करना
-        if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
+        // Grant background location ONCE only — every onResume caused location permission UI spam
+        if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())
+                && prefs != null && !prefs.getBoolean("bg_loc_granted_once", false)) {
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    dpm.setPermissionGrantState(adminComponent, getPackageName(), Manifest.permission.ACCESS_BACKGROUND_LOCATION, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
+                    dpm.setPermissionGrantState(adminComponent, getPackageName(),
+                            Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+                            DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
+                    prefs.edit().putBoolean("bg_loc_granted_once", true).apply();
                 }
             } catch (Exception ignored) {}
         }
@@ -390,4 +398,4 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
             });
-        }
+}
